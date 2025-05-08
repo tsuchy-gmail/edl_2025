@@ -141,6 +141,8 @@ def train(cuda, transforms, save_dir):
     mse_outside_list_test = []
     kl_inside_list_test = []
     kl_outside_list_test = []
+
+    epoch_list = []
     #
 
     for epoch in range(epochs):
@@ -212,9 +214,11 @@ def train(cuda, transforms, save_dir):
         mse_outside_list_train.extend([avg_mse_outside])
         kl_inside_list_train.extend([avg_kl_inside])
         kl_outside_list_train.extend([avg_kl_outside])
+        
+        epoch_list.extend([epoch + 1])
 
         loss_data_for_csv = {
-                "epoch": epoch + 1,
+                "epoch": epoch_list,
                 "loss": loss_list_train,
                 "loss_inside": loss_inside_list_train,
                 "loss_outside": loss_outside_list_train,
@@ -306,7 +310,7 @@ def train(cuda, transforms, save_dir):
         kl_outside_list_test.extend([avg_kl_outside])
 
         loss_data_for_csv = {
-                "epoch": epoch + 1,
+                "epoch": epoch_list,
                 "loss": loss_list_test,
                 "loss_inside": loss_inside_list_test,
                 "loss_outside": loss_outside_list_test,
@@ -325,4 +329,3 @@ def train(cuda, transforms, save_dir):
 
 train(3, get_transforms(), "test")
             
-
