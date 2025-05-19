@@ -1,5 +1,5 @@
 from torch.utils.data import Dataset, DataLoader
-from PIL import Image
+from PIL import Image 
 from torchvision import transforms, models
 import pandas as pd
 import torch
@@ -15,6 +15,10 @@ REACTIVE = "Reactive"
 FL = "FL"
 INSIDE = "inside"
 OUTSIDE = "outside"
+
+IN = 1
+OUT = 0
+
 batch_size = 128
 n_classes = 2
 learning_rate = 1e-4
@@ -28,6 +32,14 @@ def encode_subtype(subtype):
         return 1
     else:
         raise ValueError("subtypeがReactiveでもFLでもない")
+
+def encode_region(region):
+    if region == OUTSIDE:
+        return 0
+    elif region == INSIDE:
+        return 1
+    else:
+        raise ValueError("regionに想定外の値")
 
 class CustomDataset(Dataset):
     def __init__(self, img_path_list, subtype_list, region_list, transform=None):
@@ -45,8 +57,9 @@ class CustomDataset(Dataset):
 
         subtype = self.subtype_list[idx]
         label = encode_subtype(subtype)
-
         region = self.region_list[idx]
+
+        region = encode_region(region)
 
         if self.transform:
             img = self.transform(img)
@@ -99,7 +112,7 @@ def get_transforms():
             ]
     )
 
-def train(cuda, transforms, save_dir):
+def train(cuda, transforms, save_dir, save_ok=True):
     print("taining start")
     timestamp = datetime.now().strftime("%Y_%m%d_%H%M%S")
     result_dir_path = f"result/{save_dir}/{timestamp}/"
@@ -165,30 +178,29 @@ def train(cuda, transforms, save_dir):
         for img_batch, label_batch, region_batch in train_loader:
             img_batch = img_batch.to(device)
             label_batch = label_batch.to(device)
-            alpha_batch = model(img_batch).to(device)
+            region_batch = region_batch.to(device)
+
+            alpha_batch = model(img_batch)
             loss = evidential_classification(alpha_batch, label_batch, lamb)
-            loss_total += loss.item() * img_batch.size(0)
+            loss_total += loss.item() * img_batch.size(0) #バッチ平均 * バッチサイズ = バッチの合計ロス
             
             mse_batch, kl_batch = my_evidential_classification(alpha_batch, label_batch)
 
-            print("every patch")
-            for i in range(img_batch.size(0)):
-                mse = mse_batch[i].item()
-                kl = kl_batch[i].item()
-                region = region_batch[i]
+            inside_mask = region_batch == IN
+            outside_mask = region_batch == OUT
 
-                if region == INSIDE:
-                    mse_inside_total += mse
-                    kl_inside_total += kl
-                    loss_inside += mse + lamb*kl
-                elif region == OUTSIDE:
-                    mse_outside_total += mse
-                    kl_outside_total += kl
-                    loss_outside += mse + lamb*kl
-                else:
-                    raise ValueError("regionに想定外の値")
-            print("every patch done")
+            mse_inside_total += mse_batch[inside_mask].sum().item()
+            mse_outside_total += mse_batch[outside_mask].sum().item()
+            kl_inside_total += kl_batch[inside_mask].sum().item()
+            kl_outside_total += kl_batch[outside_mask].sum().item()
 
+            loss_inside += (mse_batch[inside_mask] + lamb * kl_batch[inside_mask]).sum().item()
+            loss_outside += (mse_batch[outside_mask] + lamb * kl_batch[outside_mask]).sum().item()
+
+            print("loss_inside_total", loss_inside)
+            print("loss_outside_total", loss_outside)
+            print(f"loss_total: {loss_total}\nin+out: {loss_inside + loss_outside}")
+            
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -198,14 +210,14 @@ def train(cuda, transforms, save_dir):
         print("my_loss", loss_inside + loss_outside)
         n_data = len(train_loader.dataset)
         avg_loss = loss_total / n_data
-        avg_loss_inside = loss_inside / n_data
-        avg_loss_outside = loss_outside / n_data
+        avg_loss_inside = loss_inside / (n_data // 2)
+        avg_loss_outside = loss_outside / (n_data // 2)
 
-        avg_mse_inside = mse_inside_total / n_data
-        avg_mse_outside = mse_outside_total / n_data
+        avg_mse_inside = mse_inside_total / (n_data // 2)
+        avg_mse_outside = mse_outside_total / (n_data // 2)
         
-        avg_kl_inside = kl_inside_total / n_data
-        avg_kl_outside = kl_outside_total / n_data
+        avg_kl_inside = kl_inside_total / (n_data // 2)
+        avg_kl_outside = kl_outside_total / (n_data // 2)
 
         loss_list_train.extend([avg_loss])
         loss_inside_list_train.extend([avg_loss_inside])
@@ -228,7 +240,7 @@ def train(cuda, transforms, save_dir):
                 "kl_outside": kl_outside_list_train,
                 }
         loss_df = pd.DataFrame(loss_data_for_csv)
-        csv_path = os.path.join(result_dir_path, "train_loss_status")
+        csv_path = os.path.join(result_dir_path, "train_loss_status.csv")
         loss_df.to_csv(csv_path, index=False)
         print("created csv")
 
@@ -250,56 +262,54 @@ def train(cuda, transforms, save_dir):
             total = 0
 
             for img_batch, label_batch, region_batch in test_loader:
+             #   img_batch = img_batch.to(device)
+             #   label_batch = label_batch.to(device)
+             #   alpha_batch = model(img_batch).to(device)
+             #   loss = evidential_classification(alpha_batch, label_batch, lamb)
+             #   loss_total += loss.item() * img_batch.size(0)
+
+             #   mse_batch, kl_batch = my_evidential_classification(alpha_batch, label_batch)
+
+             #   is_correct = alpha_batch.argmax(-1) == label_batch
+             #   is_inside = torch.tensor([regn == INSIDE for regn in region_batch], device=alpha_batch.device).to(device)
+             #   is_outside = torch.tensor([regn == OUTSIDE for regn in region_batch], device=alpha_batch.device).to(device)
                 img_batch = img_batch.to(device)
                 label_batch = label_batch.to(device)
-                alpha_batch = model(img_batch).to(device)
-                loss = evidential_classification(alpha_batch, label_batch, lamb)
-                loss_total += loss.item() * img_batch.size(0)
+                region_batch = region_batch.to(device)
 
+                alpha_batch = model(img_batch)
+                loss = evidential_classification(alpha_batch, label_batch, lamb)
+                loss_total += loss.item() * img_batch.size(0) #バッチ平均 * バッチサイズ = バッチの合計ロス
+                
                 mse_batch, kl_batch = my_evidential_classification(alpha_batch, label_batch)
 
-                is_correct = alpha_batch.argmax(-1) == label_batch
-                is_inside = torch.tensor([regn == INSIDE for regn in region_batch], device=alpha_batch.device).to(device)
-                is_outside = torch.tensor([regn == OUTSIDE for regn in region_batch], device=alpha_batch.device).to(device)
+                inside_mask = region_batch == IN
+                outside_mask = region_batch == OUT
 
+                mse_inside_total += mse_batch[inside_mask].sum().item()
+                mse_outside_total += mse_batch[outside_mask].sum().item()
+                kl_inside_total += kl_batch[inside_mask].sum().item()
+                kl_outside_total += kl_batch[outside_mask].sum().item()
 
-                #correct = is_correct.sum().item()
-                #correct_inside = (is_correct & is_inside).sum().item()
-                #correct_outside = (is_correct & is_outside).sum().item()
-                #total += img_batch.size(0)
-                #print("correct", correct)
-                #print("correct_inside", correct_inside)
-                #print("correct_outside", correct_outside)
+                loss_inside += (mse_batch[inside_mask] + lamb * kl_batch[inside_mask]).sum().item()
+                loss_outside += (mse_batch[outside_mask] + lamb * kl_batch[outside_mask]).sum().item()
 
-                print("every patch")
-                mse_inside_total = mse_batch[is_inside].sum().item()
-                kl_inside_total = kl_batch[is_inside].sum().item()
-                for i in range(img_batch.size(0)):
-                    mse = mse_batch[i].item()
-                    kl = kl_batch[i].item()
-                    region = region_batch[i]
+                print("- test - ")
+                print("loss_inside_total", loss_inside)
+                print("loss_outside_total", loss_outside)
+                print(f"loss_total: {loss_total}\nin+out: {loss_inside + loss_outside}")
 
-                    if region == INSIDE:
-                        mse_inside_total += mse
-                        kl_inside_total += kl
-                        loss_inside += mse + lamb*kl
-                    elif region == OUTSIDE:
-                        mse_outside_total += mse
-                        kl_outside_total += kl
-                        loss_outside += mse + lamb*kl
-                    else:
-                        raise ValueError("regionに想定外の値")
 
         n_data = len(test_loader.dataset)
         avg_loss = loss_total / n_data
-        avg_loss_inside = loss_inside / n_data
-        avg_loss_outside = loss_outside / n_data
+        avg_loss_inside = loss_inside / (n_data // 2)
+        avg_loss_outside = loss_outside / (n_data // 2)
 
-        avg_mse_inside = mse_inside_total / n_data
-        avg_mse_outside = mse_outside_total / n_data
+        avg_mse_inside = mse_inside_total / (n_data // 2)
+        avg_mse_outside = mse_outside_total / (n_data // 2)
         
-        avg_kl_inside = kl_inside_total / n_data
-        avg_kl_outside = kl_outside_total / n_data
+        avg_kl_inside = kl_inside_total / (n_data // 2)
+        avg_kl_outside = kl_outside_total / (n_data // 2)
 
         loss_list_test.extend([avg_loss])
         loss_inside_list_test.extend([avg_loss_inside])
@@ -321,11 +331,13 @@ def train(cuda, transforms, save_dir):
                 }
 
         loss_df = pd.DataFrame(loss_data_for_csv)
-        csv_path = os.path.join(result_dir_path, "test_loss_status")
+        csv_path = os.path.join(result_dir_path, "test_loss_status.csv")
         loss_df.to_csv(csv_path, index=False)
         print("created csv")
 
+        torch.save(model.state_dict(), os.path.join(result_dir_path, "model_last_epoch.pth"))
+
         
 
-train(3, get_transforms(), "test")
+train(0, get_transforms(), "test", True)
             
