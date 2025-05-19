@@ -19,7 +19,7 @@ OUTSIDE = "outside"
 IN = 1
 OUT = 0
 
-batch_size = 128
+batch_size = 256
 n_classes = 2
 learning_rate = 1e-4
 epochs = 100
@@ -27,17 +27,17 @@ num_workers = 8
 
 def encode_subtype(subtype):
     if subtype == REACTIVE:
-        return 0
+        return torch.tensor(0, dtype=torch.uint8)
     elif FL in subtype:
-        return 1
+        return torch.tensor(1, dtype=torch.uint8)
     else:
         raise ValueError("subtypeがReactiveでもFLでもない")
 
 def encode_region(region):
     if region == OUTSIDE:
-        return 0
+        return torch.tensor(0, dtype=torch.uint8)
     elif region == INSIDE:
-        return 1
+        return torch.tensor(1, dtype=torch.uint8)
     else:
         raise ValueError("regionに想定外の値")
 
@@ -173,12 +173,12 @@ def train(cuda, transforms, save_dir, save_ok=True):
         mse_outside_total = 0.0
         kl_outside_total = 0.0
 
-        lamb = 5 - ((epoch + 1) * 0.04)
+        lamb = 10 - ((epoch + 1) * 0.04)
 
         for img_batch, label_batch, region_batch in train_loader:
-            img_batch = img_batch.to(device)
-            label_batch = label_batch.to(device)
-            region_batch = region_batch.to(device)
+            img_batch = img_batch.to(device, non_blocking=True)
+            label_batch = label_batch.to(device, non_blocking=True).long()
+            region_batch = region_batch.to(device, non_blocking=True)
 
             alpha_batch = model(img_batch)
             loss = evidential_classification(alpha_batch, label_batch, lamb)
@@ -273,9 +273,9 @@ def train(cuda, transforms, save_dir, save_ok=True):
              #   is_correct = alpha_batch.argmax(-1) == label_batch
              #   is_inside = torch.tensor([regn == INSIDE for regn in region_batch], device=alpha_batch.device).to(device)
              #   is_outside = torch.tensor([regn == OUTSIDE for regn in region_batch], device=alpha_batch.device).to(device)
-                img_batch = img_batch.to(device)
-                label_batch = label_batch.to(device)
-                region_batch = region_batch.to(device)
+                img_batch = img_batch.to(device, non_blocking=True)
+                label_batch = label_batch.to(device, non_blocking=True)
+                region_batch = region_batch.to(device, non_blocking=True)
 
                 alpha_batch = model(img_batch)
                 loss = evidential_classification(alpha_batch, label_batch, lamb)
