@@ -26,7 +26,6 @@ batch_size = 256
 n_classes = 2
 learning_rate = 1e-4
 epochs = 100
-num_workers = 10
 
 def encode_subtype(subtype):
     if subtype == REACTIVE:
@@ -60,9 +59,9 @@ class ImageDataset(Dataset):
 
         return img
 
-def preload_all_imgs(img_path_list, transform):
+def preload_all_imgs(img_path_list, transform, ini_num_workers):
     img_ds = ImageDataset(img_path_list, transform)
-    img_loader = DataLoader(img_ds, batch_size=512, shuffle=False, num_workers=10)
+    img_loader = DataLoader(img_ds, batch_size=1024, shuffle=False, num_workers=ini_num_workers)
     tensor_img_list = []
     for i, img_batch in enumerate(tqdm(img_loader, desc="Loading imgs in batch")):
         print(f"{i+1} / {len(img_loader)}")
@@ -139,7 +138,7 @@ def get_transforms():
             ]
     )
 
-def train(cuda, transform, save_dir, save_ok=True):
+def train(cuda, transform, save_dir, save_ok=True, ini_num_workers=10, num_workers=10):
     print("training start")
     if save_ok:
         timestamp = datetime.now().strftime("%Y_%m%d_%H%M%S")
@@ -154,8 +153,8 @@ def train(cuda, transform, save_dir, save_ok=True):
     
     print("preload start")
 
-    train_img_list = preload_all_imgs(train_img_path_list, transform)
-    test_img_list = preload_all_imgs(test_img_path_list, transform)
+    train_img_list = preload_all_imgs(train_img_path_list, transform, ini_num_workers)
+    test_img_list = preload_all_imgs(test_img_path_list, transform, ini_num_workers)
 
     train_ds = CustomDataset(train_img_list, train_subtype_list, train_region_list)
     test_ds = CustomDataset(test_img_list, test_subtype_list, test_region_list)
@@ -191,6 +190,7 @@ def train(cuda, transform, save_dir, save_ok=True):
     epoch_list = []
     #
 
+    min_testloss_inside = float("inf")
     for epoch in range(epochs):
         print(f"epoch{epoch + 1}")
         model.train()
@@ -230,17 +230,11 @@ def train(cuda, transform, save_dir, save_ok=True):
             loss_inside += (mse_batch[inside_mask] + lamb * kl_batch[inside_mask]).sum().item()
             loss_outside += (mse_batch[outside_mask] + lamb * kl_batch[outside_mask]).sum().item()
 
-            print("loss_inside_total", loss_inside)
-            print("loss_outside_total", loss_outside)
-            print(f"loss_total: {loss_total}\nin+out: {loss_inside + loss_outside}")
             
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            print("step")
         
-        print("loss", loss_total)
-        print("my_loss", loss_inside + loss_outside)
         n_data = len(train_loader.dataset)
         avg_loss = loss_total / n_data
         avg_loss_inside = loss_inside / (n_data // 2)
@@ -261,6 +255,7 @@ def train(cuda, transform, save_dir, save_ok=True):
         kl_outside_list_train.extend([avg_kl_outside])
         
         epoch_list.extend([epoch + 1])
+        print("avg_loss_train", avg_loss)
 
         loss_data_for_csv = {
                 "epoch": epoch_list,
@@ -352,6 +347,7 @@ def train(cuda, transform, save_dir, save_ok=True):
         mse_outside_list_test.extend([avg_mse_outside])
         kl_inside_list_test.extend([avg_kl_inside])
         kl_outside_list_test.extend([avg_kl_outside])
+        print("avg_loss_test", avg_loss)
 
         loss_data_for_csv = {
                 "epoch": epoch_list,
@@ -372,8 +368,21 @@ def train(cuda, transform, save_dir, save_ok=True):
 
             torch.save(model.state_dict(), os.path.join(result_dir_path, "model_last_epoch.pth"))
 
+            if avg_loss_inside < min_testloss_inside:
+                min_testloss_insdie = avg_loss_inside
+                torch.save(model.state_dict(), os.path.join(result_dir_path, "min_testloss_inside.pth"))
 
-cuda = sys.argv[1]
 
-train(3, get_transforms(), "preload", True)
+cuda = int(sys.argv[1])
+ini_num_workers = int(sys.argv[2])
+num_workers = int(sys.argv[3])
+
+train(
+        cuda=cuda, 
+        transform=get_transforms(),
+        save_dir="preload",
+        save_ok=True,
+        ini_num_workers=ini_num_workers,
+        num_workers=num_workers,
+     )
             
