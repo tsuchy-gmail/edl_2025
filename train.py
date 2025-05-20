@@ -26,6 +26,7 @@ batch_size = 256
 n_classes = 2
 learning_rate = 1e-4
 epochs = 100
+cpu_count = os.cpu_count()
 
 def encode_subtype(subtype):
     if subtype == REACTIVE:
@@ -61,7 +62,7 @@ class ImageDataset(Dataset):
 
 def preload_all_imgs(img_path_list, transform, ini_num_workers):
     img_ds = ImageDataset(img_path_list, transform)
-    img_loader = DataLoader(img_ds, batch_size=1024, shuffle=False, num_workers=ini_num_workers)
+    img_loader = DataLoader(img_ds, batch_size=batch_size, shuffle=False, num_workers=ini_num_workers)
     tensor_img_list = []
     for i, img_batch in enumerate(tqdm(img_loader, desc="Loading imgs in batch")):
         print(f"{i+1} / {len(img_loader)}")
@@ -138,8 +139,10 @@ def get_transforms():
             ]
     )
 
-def train(cuda, transform, save_dir, save_ok=True, ini_num_workers=10, num_workers=10):
+def train(cuda, transform, save_dir, save_ok, ini_num_workers, num_workers):
     print("training start")
+    print("ini_num_workers", ini_num_workers)
+    print("num_workers", num_workers)
     if save_ok:
         timestamp = datetime.now().strftime("%Y_%m%d_%H%M%S")
         result_dir_path = f"result/{save_dir}/{timestamp}/"
@@ -195,7 +198,6 @@ def train(cuda, transform, save_dir, save_ok=True, ini_num_workers=10, num_worke
         print(f"epoch{epoch + 1}")
         model.train()
 
-
         loss_total = 0.0
 
         loss_inside = 0.0
@@ -208,6 +210,8 @@ def train(cuda, transform, save_dir, save_ok=True, ini_num_workers=10, num_worke
 
         lamb = 10 - ((epoch + 1) * 0.04)
 
+        n_in = 0
+        n_out = 0
         for img_batch, label_batch, region_batch in train_loader:
             img_batch = img_batch.to(device, non_blocking=True)
             label_batch = label_batch.to(device, non_blocking=True)
@@ -222,6 +226,9 @@ def train(cuda, transform, save_dir, save_ok=True, ini_num_workers=10, num_worke
             inside_mask = region_batch == IN
             outside_mask = region_batch == OUT
 
+            n_in += inside_mask.sum().item()
+            n_out += inside_mask.sum().item()
+
             mse_inside_total += mse_batch[inside_mask].sum().item()
             mse_outside_total += mse_batch[outside_mask].sum().item()
             kl_inside_total += kl_batch[inside_mask].sum().item()
@@ -235,6 +242,7 @@ def train(cuda, transform, save_dir, save_ok=True, ini_num_workers=10, num_worke
             loss.backward()
             optimizer.step()
         
+        print(f"n_in{n_in}, n_out{n_out}")
         n_data = len(train_loader.dataset)
         avg_loss = loss_total / n_data
         avg_loss_inside = loss_inside / (n_data // 2)
@@ -373,16 +381,22 @@ def train(cuda, transform, save_dir, save_ok=True, ini_num_workers=10, num_worke
                 torch.save(model.state_dict(), os.path.join(result_dir_path, "min_testloss_inside.pth"))
 
 
+print(len(sys.argv))
+
+ini_num_workers = cpu_count - 1
+num_workers = cpu_count - 1
 cuda = int(sys.argv[1])
-ini_num_workers = int(sys.argv[2])
-num_workers = int(sys.argv[3])
+
+if len(sys.argv) >= 3:
+    ini_num_workers = int(sys.argv[2])
+if len(sys.argv) >= 4:
+    num_workers = int(sys.argv[3])
 
 train(
         cuda=cuda, 
         transform=get_transforms(),
         save_dir="preload",
-        save_ok=True,
+        save_ok=False,
         ini_num_workers=ini_num_workers,
         num_workers=num_workers,
      )
-            
