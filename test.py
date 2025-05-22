@@ -15,3 +15,6 @@ def ap(lst):
 print(l)
 ap(l)
 print(l)
+
+with open("rmtar.txt", "w") as f:
+    f.write("hello")

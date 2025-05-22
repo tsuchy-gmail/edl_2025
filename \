@@ -15,12 +15,10 @@ import sys
 
 REACTIVE = "Reactive"
 FL = "FL"
-R = 0
-F = 1
 INSIDE = "inside"
 OUTSIDE = "outside"
-OUT = 0
 IN = 1
+OUT = 0
 batch_size = 256
 n_classes = 2
 learning_rate = 1e-4
@@ -29,17 +27,17 @@ cpu_count = os.cpu_count()
 
 def encode_subtype(subtype):
     if subtype == REACTIVE:
-        return torch.tensor(R, dtype=torch.long)
+        return torch.tensor(0, dtype=torch.long)
     elif FL in subtype:
-        return torch.tensor(F, dtype=torch.long)
+        return torch.tensor(1, dtype=torch.long)
     else:
         raise ValueError("subtypeがReactiveでもFLでもない")
 
 def encode_region(region):
     if region == OUTSIDE:
-        return torch.tensor(OUT, dtype=torch.long)
+        return torch.tensor(0, dtype=torch.long)
     elif region == INSIDE:
-        return torch.tensor(IN, dtype=torch.long)
+        return torch.tensor(1, dtype=torch.long)
     else:
         raise ValueError("regionに想定外の値")
 
@@ -178,8 +176,6 @@ def test(model, loader, records, save_ok, device, lamb, epoch, result_path):
 
             inside_mask = region_batch == IN
             outside_mask = region_batch == OUT
-            R_mask = label_batch == R
-            F_mask = label_batch == F
 
             n_data_in += inside_mask.sum()
             n_data_out += outside_mask.sum()
@@ -217,19 +213,19 @@ def test(model, loader, records, save_ok, device, lamb, epoch, result_path):
 
     return avg_dict["loss_in"], avg_dict["loss_out"], acc, acc_in, acc_out
 
-def train(cuda, transform, save_dir, save_ok, ini_num_workers, num_workers, dir_suffix):
+def train(cuda, transform, save_dir, save_ok, ini_num_workers, num_workers):
     start_time = time()
     print("training start")
     print("ini_num_workers", ini_num_workers)
     print("num_workers", num_workers)
     if save_ok:
         timestamp = datetime.now().strftime("%Y_%m%d_%H%M%S")
-        result_dir_path = f"result/{save_dir}/{timestamp}/{dir_suffix}"
+        result_dir_path = f"result/{save_dir}/{timestamp}/"
         os.makedirs(result_dir_path, exist_ok=True)
 
     device = torch.device(f"cuda:{cuda}")  
 
-    train_img_path_list, train_subtype_list, train_region_list = get_list_data("csv/sample_train_data.csv")
+    train_img_path_list, train_subtype_list, train_region_list = get_list_data("csv/train_data.csv")
     print("preloading start")
     train_img_list = preload_all_imgs(train_img_path_list, transform, ini_num_workers)
     train_ds = CustomDataset(train_img_list, train_subtype_list, train_region_list)
@@ -271,10 +267,6 @@ def train(cuda, transform, save_dir, save_ok, ini_num_workers, num_workers, dir_
             label_batch = label_batch.to(device, non_blocking=True)
             region_batch = region_batch.to(device, non_blocking=True)
             alpha_batch = model(img_batch)
-            print("img_batch.shape:", img_batch.shape)
-            print("label_batch.shape:", label_batch.shape)
-            print("region_batch.shape:", region_batch.shape)
-            print("alpha_batch.shape:", alpha_batch.shape)
 
             loss = evidential_classification(alpha_batch, label_batch, lamb)
             loss_total += loss.item() * img_batch.size(0) #バッチ平均 * バッチサイズ = バッチの合計ロス
@@ -332,17 +324,14 @@ def train(cuda, transform, save_dir, save_ok, ini_num_workers, num_workers, dir_
         f.write(elapsed_time)
         
 
+ini_num_workers = cpu_count - 1
+num_workers = cpu_count - 1
 cuda = int(sys.argv[1])
-dir_suffix = sys.argv[2] if len(sys.argv) >= 3 else ""
-ini_num_workers = int(sys.argv[3]) if len(sys.argv) >= 4 else cpu_count-1
-num_workers = int(sys.argv[4]) if len(sys.argv) >= 5 else cpu_count-1
 
-
+if len(sys.argv) >= 3:
+    ini_num_workers = int(sys.argv[2])
 if len(sys.argv) >= 4:
-    ini_num_workers = int(sys.argv[3])
-if len(sys.argv) >= 5:
-    num_workers = int(sys.argv[4])
-
+    num_workers = int(sys.argv[3])
 train(
         cuda=cuda, 
         transform=get_transforms(),
@@ -350,7 +339,6 @@ train(
         save_ok=True,
         ini_num_workers=ini_num_workers,
         num_workers=num_workers,
-        dir_suffix=dir_suffix
      )
 
 
