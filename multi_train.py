@@ -11,7 +11,7 @@ import os
 from my_loss_function import my_evidential_classification
 import random
 from tqdm import tqdm
-import sys
+import sys 
 import numpy as np
 from multiprocessing import Process
 
@@ -266,13 +266,16 @@ def get_loader(transform, ini_num_workers, num_workers):
 
     return train_loader, test_loader
 
-def train(train_loader, test_loader, epochs, cuda, save_dir, save_ok, dir_suffix):
+def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix):
     start_time = time()
     print("training start")
     print(f"epochs: {epochs}")
     if save_ok:
-        timestamp = datetime.now().strftime("%Y_%m%d_%H%M%S")
-        result_dir_path = f"result/{save_dir}/{timestamp}/{dir_suffix}"
+        year = datetime.now().strftime("%Y")
+        date = datetime.now().strftime("%m_%d")
+        timestamp = datetime.now().strftime("%H%M_%S%f")[:-3]
+
+        result_dir_path = f"result/{year}/{date}/{timestamp}_{dir_suffix}"
         os.makedirs(result_dir_path, exist_ok=True)
 
     device = torch.device(f"cuda:{cuda}")  
@@ -305,7 +308,9 @@ def train(train_loader, test_loader, epochs, cuda, save_dir, save_ok, dir_suffix
         kl_in_total = 0.0
         kl_out_total = 0.0
 
-        lamb = 10 - ((epoch + 1) * 0.04)
+        #lamb = 10 - ((epoch + 1) * 0.04)
+        #lamb = (epoch + 1) / epochs
+        lamb = 1
         for img_batch, label_batch, region_batch in train_loader:
             img_batch = img_batch.to(device, non_blocking=True)
             label_batch = label_batch.to(device, non_blocking=True)
@@ -375,25 +380,48 @@ def train(train_loader, test_loader, epochs, cuda, save_dir, save_ok, dir_suffix
 #dir_suffix = f"epoch{epochs}"
 
 def main():
-    cuda = int(sys.argv[1])
-    ini_num_workers = int(sys.argv[2]) if len(sys.argv) >= 3 else cpu_count-1
-    num_workers = int(sys.argv[3]) if len(sys.argv) >= 4 else cpu_count-1
-    dir_suffix = sys.argv[4] if len(sys.argv) >= 5 else ""
+    n_ps = int(sys.argv[1])
+    cudas = [None] * n_ps
+    for i in range(n_ps):
+        cudas[i] = int(sys.argv[2+i])
+    ini_num_workers = int(sys.argv[2 + n_ps]) if len(sys.argv) >= (3 + n_ps) else cpu_count-1
+    num_workers = int(sys.argv[3+n_ps]) if len(sys.argv) >= (4+n_ps) else cpu_count-1
+    n_loop = int(sys.argv[4+n_ps]) if len(sys.argv) >= (5+n_ps) else 1
+    dir_suffix = sys.argv[5+n_ps] if len(sys.argv) >= (6+n_ps) else ""
 
     transform = get_transforms()
     train_loader, test_loader = get_loader(transform, ini_num_workers, num_workers)
-    
-    for _ in range(5):
-        train(
-                train_loader=train_loader,
-                test_loader=test_loader,
-                epochs=100,
-                cuda=cuda, 
-                save_dir="05_27",
-                save_ok=True,
-                dir_suffix=dir_suffix,
-             )
 
-if __name__ == "__main__":
-    main()
+    for _ in range(n_loop):
+        ps_list = []
+        for cuda in cudas:
+            ps = Process(target=train, kwargs={
+                "train_loader": train_loader,
+                "test_loader": test_loader,
+                "epochs": 100,
+                "cuda": cuda,
+                "save_ok": True,
+                "dir_suffix": dir_suffix,
+                })
+            ps.start()  
+            ps_list.append(ps)
 
+        for ps in ps_list:
+            ps.join()
+
+main()
+
+'''
+train(
+        train_loader=train_loader,
+        test_loader=test_loader,
+        epochs=100,
+        cuda=cuda, 
+        transform=get_transforms(),
+        save_dir="05_23",
+        save_ok=True,
+        ini_num_workers=ini_num_workers,
+        num_workers=num_workers,
+        dir_suffix=dir_suffix
+     )
+'''
