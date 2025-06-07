@@ -163,17 +163,28 @@ def scatter(alpha_df, save_root_dir, typ):
     plt.savefig(save_path, dpi=300)
     plt.close()
 
-def scatter_all_types(alpha_dict, save_dir, filename, is_abs=False):
+def scatter_all_types(alpha_dict, save_dir, is_abs=False):
     fig, axes = plt.subplots(2, 2, figsize=(6,6))
     types = ["R_in", "R_out", "F_in", "F_out"]
     for ax, typ in zip(axes.flat, types):
         target_alpha = alpha_dict[typ]
         a1, a2 = target_alpha[:, 0], target_alpha[:, 1]
+        
+        n_all = target_alpha.shape[0]
+        n_pred_R = (a1 > a2).sum()
+        n_pred_F = (a1 < a2).sum()
+        subtype = typ[0]
+
+        if subtype == "R":
+            acc = n_pred_R / n_all
+        if subtype == "F":
+            acc = n_pred_F / n_all
+
         max_a1 = a1.max()
         max_a2 = a2.max()
         lim = max(max_a1, max_a2)
         ax.scatter(a1, a2, s=1, alpha=0.2)
-        ax.set_title(typ)
+        ax.set_title(f"{typ}, acc:{acc:.2f}")
         ax.set_xlim(0, lim)
         ax.set_ylim(0, lim)
         if is_abs:
@@ -181,10 +192,12 @@ def scatter_all_types(alpha_dict, save_dir, filename, is_abs=False):
             ax.set_ylim(0, 100)
     plt.tight_layout()
     
-    save_path = os.path.join(save_dir, filename)
+    file_suffix = "_abs" if is_abs else ""
+    save_path = os.path.join(save_dir, f"all_cases{file_suffix}.png")
     plt.savefig(save_path, dpi=200)
+    plt.close()
 
-def scatter_by_case(alpha_dict, save_dir, case_dict):
+def scatter_by_case(alpha_dict, save_dir, case_dict, is_abs=False):
     alpha_dict_by_case = defaultdict(lambda: defaultdict(list))
     types = ["R_in", "R_out", "F_in", "F_out"]
     for typ in types:
@@ -193,10 +206,48 @@ def scatter_by_case(alpha_dict, save_dir, case_dict):
         for alpha, case in zip(target_alpha, target_case):
             alpha_dict_by_case[case][typ].append(alpha)
 
+    
+    cases_R = list(set(case_dict["R_in"]))
+    cases_F = list(set(case_dict["F_in"]))
 
+    for subtype_idx, cases in enumerate([cases_R, cases_F]):
+        subtype = "R" if subtype_idx == 0 else "F"
+        fig, axes = plt.subplots(len(cases), 2, figsize=(6, 3 * len(cases)))
+        for i, case in enumerate(cases):
+            for j, region in enumerate(["in", "out"]):
+                ax = axes[i,j]
+                typ = f"{subtype}_{region}"
+                alpha_list = alpha_dict_by_case[case][typ]
+                alpha_np = np.stack(alpha_list)
+                a1, a2 = alpha_np[:, 0], alpha_np[:, 1]
 
-    fig, axes = plt.subplots(2, 2, figsize=(6,6))
+                n_all = alpha_np.shape[0]
+                n_pred_R = (a1 > a2).sum()
+                n_pred_F = (a1 < a2).sum()
+                if subtype == "R":
+                    acc = n_pred_R / n_all
+                if subtype == "F":
+                    acc = n_pred_F / n_all
 
+                ax.scatter(a1, a2, s=1, alpha=0.3)
+
+                title = f"{case}_{region}, acc:{acc:.2f}"
+                ax.set_title(title)
+
+                max_a1 = a1.max()
+                max_a2 = a2.max()
+                lim = max(max_a1, max_a2)
+                ax.set_xlim(0, lim)
+                ax.set_ylim(0, lim)
+                if is_abs:
+                    ax.set_xlim(0, 100)
+                    ax.set_ylim(0, 100)
+        fig.suptitle(subtype, fontsize=16)
+        plt.tight_layout()
+        file_suffix = "_abs" if is_abs else ""
+        save_path = os.path.join(save_dir, f"by_case_{subtype}{file_suffix}.png")
+        plt.savefig(save_path, dpi=200)
+        plt.close()
 
 def hist(a, b, title, save_path):
     plt.hist([a,b], label=["correct", "incorrect"], bins=np.arange(0, 1.1, 0.1), color=["orange", "blue"])
@@ -471,8 +522,10 @@ def test(model, loader, records, save_ok, device, lamb, epoch, result_path, epoc
                 alpha_dict[typ] = torch.cat(alpha_list_dict[typ], dim=0).cpu().numpy()
                 case_dict[typ] = np.concatenate(case_list_dict[typ], axis=0)
 
-        scatter_all_types(alpha_dict, alpha_scatter_dir, "all_cases.png")
-        scatter_all_types(alpha_dict, alpha_scatter_dir, "all_cases_abs.png", True)
+        scatter_all_types(alpha_dict, alpha_scatter_dir)
+        scatter_all_types(alpha_dict, alpha_scatter_dir, True)
+        scatter_by_case(alpha_dict, alpha_scatter_dir, case_dict)
+        scatter_by_case(alpha_dict, alpha_scatter_dir, case_dict, True)
 
                 #alpha_df = pd.DataFrame(alpha_dict[typ])
                 #case_df = pd.DataFrame(case_dict[typ])
@@ -500,12 +553,12 @@ def test(model, loader, records, save_ok, device, lamb, epoch, result_path, epoc
     return avg_dict["loss_in"], avg_dict["loss_out"], acc, acc_in, acc_out
 
 def get_loader(transform, ini_num_workers, num_workers, batch_size):
-    train_img_path_list, train_subtype_list, train_region_list, train_case_list= get_list_data("csv/T_train_data.csv")
+    train_img_path_list, train_subtype_list, train_region_list, train_case_list= get_list_data("csv/train_data.csv")
     train_img_list = preload_all_imgs(train_img_path_list, transform, ini_num_workers, batch_size)
     train_ds = CustomDataset(train_img_list, train_subtype_list, train_region_list, train_case_list)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers)
 
-    test_img_path_list, test_subtype_list, test_region_list, test_case_list = get_list_data("csv/T_test_data.csv")
+    test_img_path_list, test_subtype_list, test_region_list, test_case_list = get_list_data("csv/test_data.csv")
     test_img_list = preload_all_imgs(test_img_path_list, transform, ini_num_workers, batch_size)
     test_ds = CustomDataset(test_img_list, test_subtype_list, test_region_list, test_case_list)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_workers)

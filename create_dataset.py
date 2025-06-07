@@ -112,7 +112,7 @@ def create_dataset(random_state=42):
     train_inside_patch_count_Reactive = subtype_to_patch_count(train_inside_patchs_df, REACTIVE)
     train_inside_patch_count_FL = subtype_to_patch_count(train_inside_patchs_df, FL)
 
-    n_train_patch_by_subtype = min(train_inside_patch_count_Reactive, train_inside_patch_count_FL, 500)
+    n_train_patch_by_subtype = min(train_inside_patch_count_Reactive, train_inside_patch_count_FL, 5000)
 
     Reactive_train_inside_patch_df = train_inside_patchs_df[train_inside_patchs_df["subtype"] == REACTIVE].sample(n=n_train_patch_by_subtype, random_state=random_state)
     FL_train_inside_patch_df = train_inside_patchs_df[train_inside_patchs_df["subtype"].str.contains(FL)].sample(n=n_train_patch_by_subtype, random_state=random_state)
@@ -124,7 +124,7 @@ def create_dataset(random_state=42):
     test_inside_patch_count_Reactive = subtype_to_patch_count(test_inside_patchs_df, REACTIVE)
     test_inside_patch_count_FL = subtype_to_patch_count(test_inside_patchs_df, FL)
 
-    n_test_patch_by_subtype = min(test_inside_patch_count_Reactive, test_inside_patch_count_FL, 100)
+    n_test_patch_by_subtype = min(test_inside_patch_count_Reactive, test_inside_patch_count_FL)
 
     Reactive_test_inside_patch_df = test_inside_patchs_df[test_inside_patchs_df["subtype"] == REACTIVE].sample(n=n_test_patch_by_subtype, random_state=random_state)
     FL_test_inside_patch_df = test_inside_patchs_df[test_inside_patchs_df["subtype"].str.contains(FL)].sample(n=n_test_patch_by_subtype, random_state=random_state)
@@ -138,8 +138,8 @@ def create_dataset(random_state=42):
     #test_data_df.drop(columns=["case", "patch_count"], inplace=True)
     print("n_patch_train", n_train_patch_by_subtype)
     print("n_patch_test", n_test_patch_by_subtype)
-    train_data_df.to_csv("csv/T_train_data.csv", index=False)
-    test_data_df.to_csv("csv/T_test_data.csv", index=False)
+    train_data_df.to_csv("csv/train_data_for448.csv", index=False)
+    test_data_df.to_csv("csv/test_data_for448.csv", index=False)
 
 
 create_dataset()
