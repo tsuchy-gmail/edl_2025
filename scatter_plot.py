@@ -1,11 +1,24 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import numpy as np
+import torch
 
 subtypes = ["R", "F"]
 regions = ["in", "out"]
 
-def scatter(target_par_dir):
+def scatter(alpha_df, save_root_dir, typ):
+    plt.scatter(alpha_df["0"], alpha_df["1"], s=1, alpha=0.2)
+    save_path = os.path.join(save_root_dir, f"scatter_{typ}.png")
+    plt.grid(True)
+    plt.title(f"alpha\ninput:{typ}")
+    plt.xlabel("alpha1(class: Reactive)")
+    plt.ylabel("alpha2(class: FL)")
+    plt.savefig(save_path, dpi=300)
+    print("saved")
+    plt.close()
+
+def scatter_all(target_par_dir):
     model_root_dir = os.path.join("result", target_par_dir)
     model_dir_list = os.listdir(model_root_dir)
     for model_dir in model_dir_list:
@@ -51,4 +64,29 @@ def conf_mx(region):
     acc = correct/n_all
     print("acc:", acc)
 
-scatter("05_23")
+#scatter("05_23")
+def confmx(alpha_dict, save_root_dir, region):
+    subtypes = ["R", "F"]
+    row_R = []
+    row_F = []
+    for subtype in subtypes:
+        alpha = alpha_dict[f"{subtype}_{region}"]
+        R_count = np.sum(alpha[:, 0] > alpha[:, 1])
+        F_count = np.sum(alpha[:, 0] < alpha[:, 1])
+
+        print("R_count+F_count", R_count+F_count)
+        print("shape[0]", alpha.shape[0])
+        
+        if subtype == "R":
+            row_R.extend([R_count, F_count])
+        elif subtype == "F":
+            row_F.extend([F_count, R_count])
+        else:
+            raise ValueError("subtypeに予期せぬ値")
+    
+    col_R, col_F = map(list, zip(row_R, row_F))
+    confmx_dict = {"R": col_R, "F": col_F}
+    save_path = os.path.join(save_root_dir, f"confmx_{region}.csv")
+    df = pd.DataFrame(confmx_dict, index=subtypes)
+    df.to_csv(save_path, index=True, index_label="true")
+
