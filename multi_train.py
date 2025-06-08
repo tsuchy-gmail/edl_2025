@@ -16,6 +16,7 @@ import numpy as np
 from multiprocessing import Process
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from torchvision.transforms.v2 import ColorJitter, RandomApply
 
 REACTIVE = "Reactive"
 FL = "FL"
@@ -61,31 +62,34 @@ class ImageDataset(Dataset):
 
         return img
 
-def preload_all_imgs(img_path_list, transform, ini_num_workers, batch_size):
+def preload_all_imgs(img_path_list, transform, ini_num_workers, batch_size, crop_size):
     img_ds = ImageDataset(img_path_list, transform)
     img_loader = DataLoader(img_ds, batch_size=batch_size, shuffle=False, num_workers=ini_num_workers)
-    tensor_img_list = []
+    n_all_imgs = len(img_path_list)
+    all_imgs_tensor = torch.empty((n_all_imgs, 3, crop_size, crop_size), dtype=torch.uint8)
+
+    start = 0
     for i, img_batch in enumerate(tqdm(img_loader, desc="Loading imgs in batch")):
         print(f"{i+1} / {len(img_loader)}")
-        tensor_img_list.append(img_batch)
-    
-    all_imgs = torch.cat(tensor_img_list, dim=0)
-    print("all_imgs.shape", all_imgs.shape)
 
-    return all_imgs
+        end = start + img_batch.size(0)
+        all_imgs_tensor[start:end].copy_(img_batch)
+        start = end
+    
+    return all_imgs_tensor
 
 class CustomDataset(Dataset):
-    def __init__(self, tensor_img_list, subtype_list, region_list, case_list):
-        self.tensor_img_list = tensor_img_list
+    def __init__(self, imgs_tensor, subtype_list, region_list, case_list):
+        self.imgs_tensor = imgs_tensor
         self.subtype_list = subtype_list
         self.region_list = region_list
         self.case_list = case_list
 
     def __len__(self):
-        return self.tensor_img_list.size(0)
+        return self.imgs_tensor.size(0)
     
     def __getitem__(self, idx):
-        img = self.tensor_img_list[idx]
+        img = self.imgs_tensor[idx]
         subtype = self.subtype_list[idx]
         label = encode_subtype(subtype)
         region = self.region_list[idx]
@@ -119,7 +123,8 @@ def get_transforms(crop_size):
             [
                 RandomRotation90(),
                 transforms.CenterCrop(size=crop_size_tuple),
-                transforms.ToTensor(),
+                #transforms.ToTensor(),
+                transforms.PILToTensor(),
             ]
     )
 
@@ -367,6 +372,8 @@ def plot_loss(loss_df, title, save_path):
     loss_df.plot(x="epoch", y=["loss", "loss_in", "loss_out"])
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
+    plt.ylim(0, 2)
+    plt.yticks(np.arange(0, 2.2, 0.2)
     plt.title(title)
     plt.legend()
     plt.savefig(save_path)
@@ -406,7 +413,7 @@ def test(model, loader, records, save_ok, device, lamb, epoch, result_path, epoc
     with torch.no_grad():
         model.eval()
         for img_batch, label_batch, region_batch, case_batch in loader:
-            img_batch = img_batch.to(device, non_blocking=True)
+            img_batch = img_batch.to(device, non_blocking=True, dtype=torch.float32).div_(255.0)
             label_batch = label_batch.to(device, non_blocking=True)
             region_batch = region_batch.to(device, non_blocking=True)
             case_batch = np.array(case_batch)
@@ -552,18 +559,40 @@ def test(model, loader, records, save_ok, device, lamb, epoch, result_path, epoc
 
     return avg_dict["loss_in"], avg_dict["loss_out"], acc, acc_in, acc_out
 
-def get_loader(transform, ini_num_workers, num_workers, batch_size):
+def get_loader(transform, ini_num_workers, num_workers, batch_size, crop_size):
     train_img_path_list, train_subtype_list, train_region_list, train_case_list= get_list_data("csv/train_data.csv")
-    train_img_list = preload_all_imgs(train_img_path_list, transform, ini_num_workers, batch_size)
-    train_ds = CustomDataset(train_img_list, train_subtype_list, train_region_list, train_case_list)
+    train_img_tensor = preload_all_imgs(train_img_path_list, transform, ini_num_workers, batch_size, crop_size)
+    train_ds = CustomDataset(train_img_tensor, train_subtype_list, train_region_list, train_case_list)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers)
 
     test_img_path_list, test_subtype_list, test_region_list, test_case_list = get_list_data("csv/test_data.csv")
-    test_img_list = preload_all_imgs(test_img_path_list, transform, ini_num_workers, batch_size)
-    test_ds = CustomDataset(test_img_list, test_subtype_list, test_region_list, test_case_list)
+    test_img_tensor = preload_all_imgs(test_img_path_list, transform, ini_num_workers, batch_size, crop_size)
+    test_ds = CustomDataset(test_img_tensor, test_subtype_list, test_region_list, test_case_list)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_workers)
 
     return train_loader, test_loader
+
+def save_imgs_sample(imgs, cases, labels, regions, save_dir):
+    imgs = imgs.cpu().numpy() 
+    imgs = imgs.transpose(0, 2, 3, 1)
+    row, col = 5, 5
+
+    plt.figure(figsize=(20, 20))
+
+    for i in range(len(imgs)):
+        plt.subplot(row, col, i+1)
+        plt.imshow(imgs[i])
+        label = "R" if labels[i] == R else "F"
+        region = "out" if regions[i] == OUT else "in"
+        case = cases[i]
+        plt.title(f"{case}, {label}, {region}")
+        plt.axis("off")
+
+    plt.tight_layout()
+    save_path = os.path.join(save_dir, "train_imgs_sample.png")
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+
 
 def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_size):
     start_time = time()
@@ -595,6 +624,15 @@ def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_siz
     max_acc_in = -1
     max_acc_out = -1
 
+    color_jitter = ColorJitter(
+            brightness=0.3,
+            contrast=0.3,
+            saturation=0.6,
+            hue=0.05,
+            )
+
+    color_jitter_random = RandomApply([color_jitter], p=0.8)
+
     for epoch in range(epochs):
         print(f"epoch{epoch + 1}")
         model.train()
@@ -620,10 +658,13 @@ def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_siz
         lamb = 1 - epoch / epochs
 
         
-        for img_batch, label_batch, region_batch, _ in train_loader:
-            img_batch = img_batch.to(device, non_blocking=True)
+        for img_batch, label_batch, region_batch, case_batch in train_loader:
+
+            img_batch = img_batch.to(device, non_blocking=True, dtype=torch.float32).div_(255.0)
+            img_batch = color_jitter_random(img_batch)
             label_batch = label_batch.to(device, non_blocking=True)
             region_batch = region_batch.to(device, non_blocking=True)
+
             alpha_batch = model(img_batch)
 
             loss = evidential_classification(alpha_batch, label_batch, lamb)
@@ -724,7 +765,7 @@ def main():
     batch_size = 64 * ((448 // crop_size) ** 2)
 
     transform = get_transforms(crop_size)
-    train_loader, test_loader = get_loader(transform, ini_num_workers, num_workers, batch_size)
+    train_loader, test_loader = get_loader(transform, ini_num_workers, num_workers, batch_size, crop_size)
 
     for _ in range(n_loop):
         ps_list = []
