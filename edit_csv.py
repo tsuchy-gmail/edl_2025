@@ -1,11 +1,15 @@
 import pandas as pd
 
-train_df = pd.read_csv("csv/train_data.csv")
-test_df = pd.read_csv("csv/test_data.csv")
+def edit_csv(typ, region):
+    df = pd.read_csv(f"csv/{typ}_data.csv")
+    df = df[df["region"]==region]
 
-def edit_csv(df, filename):
-    df["case"] = df["img_path"].str.extract(r'(JMR\d{4})')
+    filename = f"csv/{typ}_data_{region}.csv"
     df.to_csv(filename, index=False)
 
-edit_csv(train_df, "csv/train_data.csv")
-edit_csv(test_df, "csv/test_data.csv")
+
+typs = ["train", "test"]
+regions = ["inside", "outside"]
+for typ in typs:
+    for region in regions:
+        edit_csv(typ, region)

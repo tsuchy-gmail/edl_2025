@@ -1,8 +1,10 @@
 import os
 import pandas as pd
 
-patch_size = 512
-stride = 256
+#patch_size = 512
+#stride = 256
+patch_size = 224
+stride = 224
 JMR = "JMR"
 FOLLICLE = "follicle"
 IMG = "img"
@@ -30,5 +32,5 @@ for subtype in subtypes:
                 rows.append(row)
 
 patch_df = pd.DataFrame(rows)
-csv_filename = "csv/patch_info.csv"
+csv_filename = "csv/224_patch_info.csv"
 patch_df.to_csv(csv_filename, index=False)

@@ -1,5 +1,5 @@
 import pandas as pd
-patch_info_path = "csv/patch_info.csv"
+patch_info_path = "csv/224_patch_info.csv"
 
 patch_df = pd.read_csv(patch_info_path)
 subtypes = ["Reactive", "FL/G1", "FL/G2", "FL/G3a"]
@@ -24,7 +24,7 @@ def count_by_subtype():
 def count_by_case():
     count = patch_df.groupby("case").agg(count=("case", "size"), subtype=("subtype", "first"))
     sorted_count = count.sort_values(by="count", ascending=False)
-    sorted_count.to_csv("csv/patch_count_by_case.csv")
+    sorted_count.to_csv("csv/224_patch_count_by_case.csv")
 
 def count_case():
     case_count = patch_df.groupby("subtype")["case"].nunique()
@@ -36,5 +36,5 @@ def count_more_200():
     print(df_by_case)
 
 
-count_case()
+count_by_case()
      

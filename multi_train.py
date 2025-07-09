@@ -373,7 +373,18 @@ def plot_loss(loss_df, title, save_path):
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.ylim(0, 2)
-    plt.yticks(np.arange(0, 2.2, 0.2)
+    plt.yticks(np.arange(0, 2.2, 0.2))
+    plt.title(title)
+    plt.legend()
+    plt.savefig(save_path)
+    plt.close()
+
+def plot_acc(loss_df, title, save_path):
+    loss_df.plot(x="epoch", y=["acc", "acc_in", "acc_out"])
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.ylim(0, 1)
+    plt.yticks(np.arange(0, 1.1, 0.1))
     plt.title(title)
     plt.legend()
     plt.savefig(save_path)
@@ -550,11 +561,12 @@ def test(model, loader, records, save_ok, device, lamb, epoch, result_path, epoc
     if save_ok:
         csv_save_path = os.path.join(result_path, "test_loss.csv")
         loss_png_path = os.path.join(result_path, "test_loss.png")
+        acc_png_path = os.path.join(result_path, "acc.png")
 
         test_loss_df = pd.DataFrame(records)
         test_loss_df.to_csv(csv_save_path, index=False)
         plot_loss(test_loss_df, "Test Loss", loss_png_path)
-
+        plot_acc(test_loss_df, "Accuracy", acc_png_path)
         torch.save(model.state_dict(), os.path.join(result_path, "model_last.pth"))
 
     return avg_dict["loss_in"], avg_dict["loss_out"], acc, acc_in, acc_out
@@ -594,7 +606,7 @@ def save_imgs_sample(imgs, cases, labels, regions, save_dir):
     plt.close()
 
 
-def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_size):
+def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_size, lamb_type):
     start_time = time()
     print("training start")
     print(f"epochs: {epochs}")
@@ -645,23 +657,20 @@ def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_siz
         kl_in_total = 0.0
         kl_out_total = 0.0
 
-        #lamb = 10 - ((epoch + 1) * 0.1)
-        #lamb = 100 - (epoch + 1)
-        #lamb = 100
-        #lamb = epoch * 0.1
-        #lamb = (epoch + 1) / epochs
-        #lamb = 1 - (epoch + 1) / epochs
-        #lamb = 2
-        #lamb = 0
+        if "lamb0to1" in lamb_type:
+            lamb = min(1, epoch / 10)
+            #if epoch >= 1000:
+            #    lamb = 1
+        elif "lamb1to0" in lamb_type:
+            lamb = max(0, 1 - epoch / 10)
+            #if epoch >= 1000:
+            #    lamb = 0.001
 
-        #lamb = epoch / epochs
-        lamb = 1 - epoch / epochs
 
         
         for img_batch, label_batch, region_batch, case_batch in train_loader:
-
             img_batch = img_batch.to(device, non_blocking=True, dtype=torch.float32).div_(255.0)
-            img_batch = color_jitter_random(img_batch)
+            #img_batch = color_jitter_random(img_batch)
             label_batch = label_batch.to(device, non_blocking=True)
             region_batch = region_batch.to(device, non_blocking=True)
 
@@ -687,13 +696,6 @@ def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_siz
             label_in_batch = label_batch[in_mask]
             correct_in = (pred_in_batch == label_in_batch).sum()
             alpha_inco = alpha_batch_in[pred_in_batch != label_in_batch]
-            #print("alpha_incorrect", alpha_inco)
-            #print("alpha_in_mt1", alpha_in_mt1)
-            #print("kl_in_mt1", kl_in_mt1)
-            #print("kl batch_total", kl_batch[in_mask].sum().item())
-            #print("acc_in", correct_in / label_in_batch.shape[0])
-            #print("kl total", kl_in_total)
-            #print()
             loss_in_total += (mse_batch[in_mask] + lamb * kl_batch[in_mask]).sum().item()
             loss_out_total += (mse_batch[out_mask] + lamb * kl_batch[out_mask]).sum().item()
 
@@ -778,6 +780,7 @@ def main():
                 "save_ok": True,
                 "dir_suffix": dir_suffix,
                 "crop_size": crop_size,
+                "lamb_type": dir_suffix,
                 })
             ps.start()  
             ps_list.append(ps)
