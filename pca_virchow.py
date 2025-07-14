@@ -1,3 +1,4 @@
+import os
 import pathlib, math, sys
 import numpy as np
 from PIL import Image
@@ -9,12 +10,12 @@ import timm
 from timm.layers import SwiGLUPacked
 
 # ---------- 設定 ----------
-CASE = "JMR2499"
+CASE = "JMR0299"
 WSI_PATH   = f"/Raw/Kurume_Dataset/JMR_svs/{CASE}.svs"          # 入力 Whole-Slide Image
-OUT_PATH   = f"pca_{CASE}.png"      # 出力可視化画像
+OUT_PATH   = f"figure/pca_{CASE}.png"      # 出力可視化画像
 PATCH      = 224                  # パッチ幅・高さ（モデル入力サイズ）
 BATCH_SIZE = 256                   # GPU メモリに合わせて調整
-DEVICE     = "cuda:0"
+DEVICE     = "cuda:3"
 MODEL_NAME = "hf-hub:paige-ai/Virchow"  # 2 560-d を返すネット
 # --------------------------------
 
@@ -34,10 +35,21 @@ def get_patches(slide, level0_wh, patch):
         for ix in range(nx):
             yield ix * patch, iy * patch
 
+def embed(x):                                         # x: (B,3,224,224)
+    y = vir(x)                                        # (B,257,1280)
+    feats = torch.cat([y[:,0], y[:,1:].mean(1)], -1)  # (B,2560)
+    return feats                                      # on GPU
 def main():
-    slide   = openslide.OpenSlide(WSI_PATH)
-    w0, h0  = slide.level_dimensions[0]
-    coords  = list(get_patches(slide, (w0, h0), PATCH))
+    saved_coords_path = f"coords_{CASE}.npy"
+
+    if os.path.exists(saved_coords_path):
+        coords = np.load(saved_coords_path)
+    else:
+        slide   = openslide.OpenSlide(WSI_PATH)
+        w0, h0  = slide.level_dimensions[0]
+        coords  = list(get_patches(slide, (w0, h0), PATCH))
+        np.save(f"coords_{CASE}.npy", np.array(coords, dtype=np.int32))
+
     n_total = len(coords)
     print(f"WSI size: {w0}×{h0} px, patches: {n_total}")
 
@@ -50,9 +62,10 @@ def main():
 
 
 
-    embeds = []
+    embeds = np.empty((n_total, 2560), dtype=np.float32)
     with torch.no_grad():
         for i in range(0, n_total, BATCH_SIZE):
+            print(f"{i}/{n_total}")
             batch_coords = coords[i:i+BATCH_SIZE]
             imgs = []
             for x, y in batch_coords:
@@ -60,10 +73,12 @@ def main():
                 img = slide.read_region((x, y), 0, (PATCH, PATCH)).convert("RGB")
                 imgs.append(tfm(img))
             x_tensor = torch.stack(imgs).to(DEVICE)
-            out = model(x_tensor)          # (B, 2560)
-            embeds.append(out.cpu())
+            out = model(x_tensor).cpu()
+            feats = torch.cat([out[:,0], out[:,1:].mean(1)], -1).numpy()
+            embeds[i:i+len(batch_coords)] = feats
 
-    embeds = torch.cat(embeds).numpy()      # (N, 2560)
+    np.save(f"{CASE}_embeds.npy", embeds)
+    print(f"✅ Saved: {CASE}_embeds.npy")
 
     # ---------- PCA → 0–255 正規化 ----------
     pca = PCA(n_components=3, svd_solver="randomized")

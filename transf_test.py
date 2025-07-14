@@ -10,15 +10,10 @@ def get_img_paths(csv_path):
 
 paths = get_img_paths("csv/T_test_data.csv")
 img = Image.open(paths[0])
-resize = T.Resize((224, 224))
-crop = T.CenterCrop(224)
-resized = resize(img)
+#resize = T.Resize((224, 224))
+crop = T.CenterCrop(14)
+#resized = resize(img)
 
-pyplot.subplot(1, 2, 1)
-pyplot.title("original")
 pyplot.imshow(crop(img))
-pyplot.subplot(1,2,2)
-pyplot.title("resized")
-pyplot.imshow(crop(resized))
-pyplot.savefig("imgs/resize_crop_test.png", dpi=300)
+pyplot.savefig("figure/crop14.png")
 
