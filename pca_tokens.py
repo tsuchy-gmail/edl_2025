@@ -10,7 +10,7 @@ import timm
 from timm.layers import SwiGLUPacked
 import cv2
 
-CASE = "JMR2499"
+CASE = "JMR0020"
 WSI_PATH   = f"/Raw/Kurume_Dataset/JMR_svs/{CASE}.svs"
 OUT_PATH   = f"figure/pca/tissue_area/patch14/{CASE}.png"
 PATCH_SIZE = 224
@@ -67,11 +67,12 @@ def pca(embeds, coords, slide):
         pca.partial_fit(flat_embeds[i:i+tmp_batch_size])
 
     print("transform")
-    rgb = pca.transform(flat_embeds)
+    #rgb = pca.transform(flat_embeds)
     print("3")
     #rgb = pca.fit_transform(flat_embeds)         # (N, 3)
     rgb = np.empty((flat_embeds.shape[0], 3), dtype=np.float32)
     for start in range(0, flat_embeds.shape[0], tmp_batch_size):
+        print("start:", start)
         rgb[start:start + tmp_batch_size] = pca.transform(flat_embeds[start:start + tmp_batch_size])
     print("4")
     rgb -= rgb.min(axis=0, keepdims=True)
@@ -140,7 +141,7 @@ def get_embeds(slide):
 
 def main():
     print(CASE)
-    embeds_save_path = f"saved_embeds/tissue_area/{CASE}_embeds.npy"
+    embeds_save_path = f"saved_embeds/tissue_area/{CASE}_embeds.npz"
     slide = openslide.OpenSlide(WSI_PATH)
     if os.path.exists(embeds_save_path):
         print("exist")
