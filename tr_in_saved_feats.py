@@ -174,9 +174,7 @@ def scatter_all_types(alpha_dict, save_dir, is_abs=False):
         if subtype == "F":
             acc = n_pred_F / n_all
 
-        max_a1 = a1.max()
-        max_a2 = a2.max()
-        lim = max(max_a1, max_a2)
+        lim = 20
         ax.scatter(a1, a2, s=1, alpha=0.2)
         ax.set_title(f"{typ}, acc:{acc:.2f}")
         ax.set_xlim(0, lim)
@@ -193,7 +191,7 @@ def scatter_all_types(alpha_dict, save_dir, is_abs=False):
 
 def scatter_by_case(alpha_dict, save_dir, case_dict, is_abs=False):
     alpha_dict_by_case = defaultdict(lambda: defaultdict(list))
-    types = ["R_in", "R_out", "F_in", "F_out"]
+    types = ["R_in", "F_in"]
     for typ in types:
         target_alpha = alpha_dict[typ]
         target_case = case_dict[typ]
@@ -206,10 +204,10 @@ def scatter_by_case(alpha_dict, save_dir, case_dict, is_abs=False):
 
     for subtype_idx, cases in enumerate([cases_R, cases_F]):
         subtype = "R" if subtype_idx == 0 else "F"
-        fig, axes = plt.subplots(len(cases), 2, figsize=(6, 3 * len(cases)))
+        fig, axes = plt.subplots(len(cases), 1, figsize=(6, 3 * len(cases)))
         for i, case in enumerate(cases):
-            for j, region in enumerate(["in", "out"]):
-                ax = axes[i,j]
+            for j, region in enumerate(["in"]):
+                ax = axes[i]
                 typ = f"{subtype}_{region}"
                 alpha_list = alpha_dict_by_case[case][typ]
                 alpha_np = np.stack(alpha_list)
@@ -228,11 +226,10 @@ def scatter_by_case(alpha_dict, save_dir, case_dict, is_abs=False):
                 title = f"{case}_{region}, acc:{acc:.2f}"
                 ax.set_title(title)
 
-                max_a1 = a1.max()
-                max_a2 = a2.max()
-                lim = max(max_a1, max_a2)
+                lim = 20
                 ax.set_xlim(0, lim)
                 ax.set_ylim(0, lim)
+                ax.set_aspect("equal")
                 if is_abs:
                     ax.set_xlim(0, 100)
                     ax.set_ylim(0, 100)
@@ -364,28 +361,25 @@ def plot_train_loss(loss_df, title, save_path, lim):
     plt.ylim(0, lim)
     plt.yticks(np.arange(0, lim + 0.2, 0.2))
     plt.title(title)
-    plt.legend()
     plt.savefig(save_path)
     plt.close()
 def plot_test_loss(loss_df, title, save_path, lim):
-    loss_df.plot(x="epoch", y=["loss", "loss_in", "loss_out"])
+    loss_df.plot(x="epoch", y=["loss"])
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.ylim(0, lim)
     plt.yticks(np.arange(0, lim + 0.2, 0.2))
     plt.title(title)
-    plt.legend()
     plt.savefig(save_path)
     plt.close()
 
 def plot_acc(loss_df, title, save_path):
-    loss_df.plot(x="epoch", y=["acc", "acc_in", "acc_out"])
+    loss_df.plot(x="epoch", y=["acc"])
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.ylim(0, 1)
     plt.yticks(np.arange(0, 1.1, 0.1))
     plt.title(title)
-    plt.legend()
     plt.savefig(save_path)
     plt.close()
 
@@ -403,7 +397,7 @@ def test(head, loader, records, save_ok, device, lamb, epoch, result_path, epoch
     n_correct_out = 0
 
     n_data_in = 0
-    n_data_out = 0
+    n_data_out = 1000000000
 
     alpha_list_dict = {
             "R_in": [],
@@ -571,14 +565,14 @@ def test(head, loader, records, save_ok, device, lamb, epoch, result_path, epoch
 
     return avg_dict["loss_in"], avg_dict["loss_out"], acc, acc_in, acc_out
 
-def get_loader(ini_num_workers, num_workers, batch_size, crop_size):
-    _, train_subtype_list, train_region_list, train_case_list= get_list_data("csv/train_data_inside.csv")
-    train_feats = np.load("saved_feats/512center224_in_train.npy", mmap_mode="r")
+def get_loader(tar_dir, ini_num_workers, num_workers, batch_size, crop_size):
+    _, train_subtype_list, train_region_list, train_case_list= get_list_data(f"csv/{tar_dir}/train_data.csv")
+    train_feats = np.load(f"saved_feats/{tar_dir}/only_cls_train.npy", mmap_mode="r")
     train_ds = FeatureDataset(train_feats, train_subtype_list, train_region_list, train_case_list)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers)
 
-    _, test_subtype_list, test_region_list, test_case_list = get_list_data("csv/test_data.csv")
-    test_feats = np.load("saved_feats/512center224_test.npy", mmap_mode="r")
+    _, test_subtype_list, test_region_list, test_case_list = get_list_data(f"csv/{tar_dir}/test_data.csv")
+    test_feats = np.load(f"saved_feats/{tar_dir}/only_cls_test.npy", mmap_mode="r")
     test_ds = FeatureDataset(test_feats, test_subtype_list, test_region_list, test_case_list)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_workers)
 
@@ -623,7 +617,8 @@ def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_siz
     print("preloading start")
     train_records = []
 
-    head = Dirichlet(2560, 2).to(device) #あえて明示
+    dim = 1280
+    head = Dirichlet(dim, 2).to(device) #あえて明示
     optimizer = torch.optim.AdamW(head.parameters(), lr=1e-3, weight_decay=1e-4)
 
     #model.fc = Dirichlet(n_features, n_classes)
@@ -738,7 +733,8 @@ def main():
     #batch_size = 64 * ((448 // crop_size) ** 2)
     batch_size = 256
 
-    train_loader, test_loader = get_loader(ini_num_workers, num_workers, batch_size, crop_size)
+    tar_dir = "size896_stride896"
+    train_loader, test_loader = get_loader(tar_dir, ini_num_workers, num_workers, batch_size, crop_size)
 
 
     for _ in range(n_loop):

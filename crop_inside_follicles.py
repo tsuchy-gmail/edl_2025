@@ -6,6 +6,17 @@ import torch
 
 import os
 import openslide
+import pandas as pd
+import shutil
+
+def save_info_csv(info_list, crop_size, stride):
+    out_path = f"csv/size{crop_size}_stride{stride}/patch_info.csv"
+    dirname = os.path.dirname(out_path)
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+    pd.DataFrame(info_list).to_csv(out_path, index=False)
+
 
 def crop_inside(crop_size, stride):
     follicle_ratio = 1.0
@@ -18,17 +29,22 @@ def crop_inside(crop_size, stride):
 
     subtypes = ["Reactive", "FL/G1", "FL/G2", "FL/G3a", "FL/G3b"]
 
+    info_list = []
+    
     for target_subtype in subtypes:
         tif_list = os.listdir(f"{mask_root_dir}/{target_subtype}")
         save_root_dir = f"/Dataset/Kurume_Dataset/tsuchimoto/data/Follicle_Dataset/size{crop_size}_stride{stride}/{target_subtype}"
         cases = [tif.split(".")[0] for tif in tif_list if tif.startswith("JMR")]
 
+        if os.path.exists(save_root_dir):
+            shutil.rmtree(save_root_dir)
+
         for target_case in cases:
             print(target_case)
             save_path = f"{save_root_dir}/{target_case}"
 
-            if os.path.exists(save_path):
-                continue
+            #if os.path.exists(save_path):
+            #    continue
 
             mask_path = f"{mask_root_dir}/{target_subtype}/{target_case}.tif"
             mask_img = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
@@ -45,10 +61,11 @@ def crop_inside(crop_size, stride):
             plt.savefig(f"{save_path}/id_map.png")
             plt.close()
 
-            sum = 0
+            n_follicles = n_labels - 1
+            n_patchs = 0
 
             for id in range(n_labels):
-                if id == 0:
+                if id == 0: #濾胞以外の領域の大きな一塊りがid=0
                     continue
 
                 binary_map = (id_map == id).astype(np.float32)
@@ -59,8 +76,12 @@ def crop_inside(crop_size, stride):
 
                 num = coors[0].shape[0]
                 print("num",num)
-                sum += num
+                
+                if num == 0:
+                    print("num==0")
+                    continue
 
+                n_patchs += num
                 x_list = (coors[1] * stride).tolist()
                 y_list = (coors[0] * stride).tolist()
 
@@ -72,9 +93,24 @@ def crop_inside(crop_size, stride):
                     crop_img = svs.read_region((x, y), 0, (crop_size, crop_size)).convert("RGB") #0は等倍という意味0階層目
                     crop_img.save(os.path.join(save_path, "follicle" + str(id), "img_x" + str(x) + "_y" + str(y) + ".tif"))
 
-            print(f"{target_case}-sum:", sum)
+            print(f"{target_case}-n_patchs:", n_patchs)
+            
+            subtype = "Reactive" if "Reactive" in target_subtype else "FL"
+            grade = "None" if "Reactive" in target_subtype else target_subtype.split("/")[1]
+            
+            info = {
+                    "case": target_case,
+                    "subtype": subtype,
+                    "grade": grade,
+                    "n_follicles": n_follicles,
+                    "n_patchs": n_patchs,
+                    "region": "inside"
+                    }
+            info_list.append(info)
+    
+    save_info_csv(info_list, crop_size, stride)
 
-crop_inside(crop_size=224, stride=224)
+crop_inside(crop_size=896, stride=896)
 
 
 """

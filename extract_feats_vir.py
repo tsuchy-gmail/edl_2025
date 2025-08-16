@@ -9,10 +9,11 @@ from PIL import Image
 import pandas as pd
 import time
 import matplotlib.pyplot as plt
+import os
 start = time.time()
 
 vir = timm.create_model("hf-hub:paige-ai/Virchow", pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
-device = torch.device("cuda:0")
+device = torch.device("cuda:3")
 vir = vir.eval().to(device)
 for p in vir.parameters(): 
     p.requires_grad = False
@@ -20,7 +21,9 @@ for p in vir.parameters():
 @torch.no_grad()                                      # ← 明示推論
 def embed(x):                                         # x: (B,3,224,224)
     y = vir(x)                                        # (B,257,1280)
-    feats = torch.cat([y[:,0], y[:,1:].mean(1)], -1)  # (B,2560)
+    #feats = torch.cat([y[:,0], y[:,1:].mean(1)], -1)  # (B,2560)
+    feats = torch.cat([y[:,0]], -1) #only CLS token
+    #feats = y[:,1:].mean(1) #only 14patch token
     return feats                                      # on GPU
 
 # ---- 2. Dataset ----
@@ -29,7 +32,7 @@ class Crop224DS(Dataset):
         self.img_paths = img_paths
         cfg = vir.pretrained_cfg
         self.tf = Compose([
-            #Resize((224, 224)),
+            Resize((224, 224)),
             CenterCrop(224),
             ToTensor(),
             Normalize(mean=cfg["mean"], std=cfg["std"])
@@ -56,13 +59,13 @@ def show_img9(img_batch):
     plt.savefig("result/resized9.png")
     exit(0)
 
-def extract_feats(csvname, savename):
-    img_paths = get_list_data(f"csv/{csvname}.csv")
+def extract_feats(tar_dir, filename, savename):
+    img_paths = get_list_data(f"csv/{tar_dir}/{filename}")
     ds  = Crop224DS(img_paths)
     ldr = DataLoader(ds, batch_size=256, num_workers=4, pin_memory=True, shuffle=False)
 
     N = len(ds)
-    feat_mat = np.empty((N, 2560), dtype="float32")
+    feat_mat = np.empty((N, 1280), dtype="float32")
     idx = 0
 
 
@@ -74,9 +77,19 @@ def extract_feats(csvname, savename):
         feat_mat[idx:idx+len(feats)] = feats
         idx += len(feats)
 
-    np.save(f"saved_feats/{savename}.npy", feat_mat)
+    save_root_dir = "saved_feats/"
+    save_dir = os.path.join(save_root_dir, tar_dir)
+    save_path = os.path.join(save_dir, savename)
+    
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    np.save(save_path, feat_mat)
     print("saved:", feat_mat.shape)
     end = time.time()
     print("time", f"{end-start:.4f}")
 
-extract_feats("train_data_inside", "512center224_in_train")
+patch_size = 896
+stride = 896
+tar_dir = f"size{patch_size}_stride{stride}"
+extract_feats(tar_dir, "train_data.csv", "only_cls_train.npy")
+extract_feats(tar_dir, "test_data.csv", "only_cls_test.npy")

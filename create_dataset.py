@@ -1,146 +1,89 @@
 import os
-import random
 import pandas as pd
 
-REACTIVE = "Reactive"
-FL = "FL"
-INSIDE = "inside"
-OUTSIDE = "outside"
+patch_size = 896
+stride = 896
+data_dir = f"/Dataset/Kurume_Dataset/tsuchimoto/data/Follicle_Dataset/size{patch_size}_stride{stride}/" 
+subtypes = ["Reactive", "FL/G1", "FL/G2", "FL/G3a"]
+csv_path = f"csv/size{patch_size}_stride{stride}/img_path.csv"
 
-def random_sample_fullpath_inside(max_n_patch=500):
-    patch_size = 512
-    stride = 256
-    JMR = "JMR"
-    FOLLICLE = "follicle"
-    IMG = "img"
 
-    patch_root_dir = f"/Dataset/Kurume_Dataset/tsuchimoto/data/Follicle_Dataset/size{patch_size}_stride{stride}/"
-    subtypes = ["Reactive", "FL/G1", "FL/G2", "FL/G3a"]
-
-    sampled_fullpath_list = []
-    subtype_list = []
+def create_path_csv():
+    img_path_list = []
     case_list = []
-    patch_count_list = []
-    for subtype in subtypes:
-        case_dir = os.path.join(patch_root_dir, subtype)
-        cases = [case for case in os.listdir(case_dir) if case.startswith(JMR)]
-        for case in cases:
-            follicle_id_dir = os.path.join(case_dir, case)
-            follicle_id_list = [follicle_id for follicle_id in os.listdir(follicle_id_dir) if follicle_id.startswith(FOLLICLE)]
-            tmp_fullpath_list = []
-            for follicle_id in follicle_id_list:
-                patch_dir = os.path.join(follicle_id_dir, follicle_id)
-                patch_list = [patch for patch in os.listdir(patch_dir) if patch.startswith(IMG)]
-                for patch in patch_list:
-                    fullpath = os.path.join(patch_dir, patch)
-                    tmp_fullpath_list.append(fullpath)  
-            n_patch = min(max_n_patch, len(tmp_fullpath_list))
-            sampled_fullpath = random.sample(tmp_fullpath_list, n_patch)
-
-            patch_count_list.extend([n_patch] * n_patch)
-            sampled_fullpath_list.extend(sampled_fullpath)
-            subtype_list.extend([subtype] * n_patch)
-            case_list.extend([case] * n_patch)
-
-    train_data = {"img_path": sampled_fullpath_list, "subtype": subtype_list, "case": case_list, "patch_count": patch_count_list, "region": INSIDE}
-    train_data_df = pd.DataFrame(train_data)
-    print(train_data_df["subtype"].value_counts())
-    train_data_df.to_csv("csv/sampled_patchs_inside_max500.csv", index=False)
-    print("created csv inside")
-
-random_sample_fullpath_inside()
-
-def random_sample_fullpath_outside(max_n_patch=400):
-    patch_size = 512
-    stride = 256
-    JMR = "JMR"
-    FOLLICLE = "follicle"
-    OUTSIDE_FOLLICLES = "outside_follicles_n1000"
-    IMG = "img"
-
-    patch_root_dir = f"/Dataset/Kurume_Dataset/tsuchimoto/data/Follicle_Dataset/size{patch_size}_stride{stride}/"
-    subtypes = ["Reactive", "FL/G1", "FL/G2", "FL/G3a"]
-
-    sampled_fullpath_list = []
     subtype_list = []
-    case_list = []
-    patch_count_list = []
+    region_list = []
+
     for subtype in subtypes:
-        case_dir = os.path.join(patch_root_dir, subtype)
-        cases = [case for case in os.listdir(case_dir) if case.startswith(JMR)]
+        case_dir = os.path.join(data_dir, subtype)
+        cases = os.listdir(case_dir)
         for case in cases:
-            outside_patch_dir = os.path.join(case_dir, case, OUTSIDE_FOLLICLES)
-            outside_patch_list = [patch for patch in os.listdir(outside_patch_dir) if patch.startswith(IMG)]
-            tmp_fullpath_list = []
-            for patch in outside_patch_list:
-                fullpath = os.path.join(outside_patch_dir, patch)
-                tmp_fullpath_list.append(fullpath)  
-            n_patch = min(max_n_patch, len(tmp_fullpath_list))
-            sampled_fullpath = random.sample(tmp_fullpath_list, n_patch)
-            patch_count_list.extend([n_patch] * n_patch)
-            sampled_fullpath_list.extend(sampled_fullpath)
-            subtype_list.extend([subtype] * n_patch)
-            case_list.extend([case] * n_patch)
+            if not case.startswith("JMR"):
+                continue
+            
+            fol_dir = os.path.join(case_dir, case)
+            follicles = os.listdir(fol_dir)
+            for follicle in follicles:
+                if not follicle.startswith("follicle"):
+                    continue
 
-    train_data = {"img_path": sampled_fullpath_list, "subtype": subtype_list, "case": case_list, "patch_count": patch_count_list, "region": OUTSIDE}
-    train_data_df = pd.DataFrame(train_data)
-    print(train_data_df["subtype"].value_counts())
-    train_data_df.to_csv("csv/sampled_patchs_outside_max400.csv", index=False)
-    print("created csv outside")
+                patch_dir = os.path.join(fol_dir, follicle)
+                patchs = os.listdir(patch_dir)
+                for patch in patchs:
+                    if not patch.startswith("img"):
+                        continue
+                    
+                    img_path = os.path.join(patch_dir, patch)
+                    img_path_list.append(img_path) 
+                    case_list.append(case)
+                    subtype_list.append(subtype)
+                    region_list.append("inside")
 
-random_sample_fullpath_outside()
+    csv_data = {
+            "img_path": img_path_list,
+            "case": case_list,
+            "subtype": subtype_list,
+            "region": region_list,
+            }
 
-def subtype_to_patch_count(df, subtype):
-    return df[df["subtype"].str.contains(subtype)].groupby("case").first()["patch_count"].sum()
-
-def create_dataset(random_state=42):
-    inside_patchs_df = pd.read_csv("csv/sampled_patchs_inside_max500.csv")
-    outside_patchs_df = pd.read_csv("csv/sampled_patchs_outside_max400.csv")
-    dataset_df = pd.concat([inside_patchs_df, outside_patchs_df])
-
-    test_case_list_Reactive = ["JMR0077", "JMR0299", "JMR2518"] #一旦パッチ数300くらいの症例で適当に選択
-    test_case_list_FL = ["JMR0020", "JMR0465", "JMR2499"] 
-    test_case_list = test_case_list_Reactive + test_case_list_FL
-
-    train_inside_patchs_df = inside_patchs_df[~inside_patchs_df["case"].isin(test_case_list)]
-    test_inside_patchs_df = inside_patchs_df[inside_patchs_df["case"].isin(test_case_list)]
-
-    train_outside_patchs_df = outside_patchs_df[~outside_patchs_df["case"].isin(test_case_list)]
-    test_outside_patchs_df = outside_patchs_df[outside_patchs_df["case"].isin(test_case_list)]
-
-    #for train
-    train_inside_patch_count_Reactive = subtype_to_patch_count(train_inside_patchs_df, REACTIVE)
-    train_inside_patch_count_FL = subtype_to_patch_count(train_inside_patchs_df, FL)
-
-    n_train_patch_by_subtype = min(train_inside_patch_count_Reactive, train_inside_patch_count_FL, 5000)
-
-    Reactive_train_inside_patch_df = train_inside_patchs_df[train_inside_patchs_df["subtype"] == REACTIVE].sample(n=n_train_patch_by_subtype, random_state=random_state)
-    FL_train_inside_patch_df = train_inside_patchs_df[train_inside_patchs_df["subtype"].str.contains(FL)].sample(n=n_train_patch_by_subtype, random_state=random_state)
-    Reactive_train_outside_patch_df = train_outside_patchs_df[train_outside_patchs_df["subtype"] == REACTIVE].sample(n=n_train_patch_by_subtype, random_state=random_state)
-    FL_train_outside_patch_df = train_outside_patchs_df[train_outside_patchs_df["subtype"].str.contains(FL)].sample(n=n_train_patch_by_subtype, random_state=random_state)
+    pd.DataFrame(csv_data).to_csv(csv_path, index=False)
 
 
-    #for test
-    test_inside_patch_count_Reactive = subtype_to_patch_count(test_inside_patchs_df, REACTIVE)
-    test_inside_patch_count_FL = subtype_to_patch_count(test_inside_patchs_df, FL)
+def create_train_data(df):
+    df_F = df[df["subtype"].str.contains("FL")]
+    df_R = df[df["subtype"] == "Reactive"]
+    n_min = min(len(df_F), len(df_R))
 
-    n_test_patch_by_subtype = min(test_inside_patch_count_Reactive, test_inside_patch_count_FL)
+    print("n_min", n_min)
+    seed = 42
+    df_F_sampled = df_F.sample(n=n_min, random_state=seed)
+    df_R_sampled = df_R.sample(n=n_min, random_state=seed)
 
-    Reactive_test_inside_patch_df = test_inside_patchs_df[test_inside_patchs_df["subtype"] == REACTIVE].sample(n=n_test_patch_by_subtype, random_state=random_state)
-    FL_test_inside_patch_df = test_inside_patchs_df[test_inside_patchs_df["subtype"].str.contains(FL)].sample(n=n_test_patch_by_subtype, random_state=random_state)
-    Reactive_test_outside_patch_df = test_outside_patchs_df[test_outside_patchs_df["subtype"] == REACTIVE].sample(n=n_test_patch_by_subtype, random_state=random_state)
-    FL_test_outside_patch_df = test_outside_patchs_df[test_outside_patchs_df["subtype"].str.contains(FL)].sample(n=n_test_patch_by_subtype, random_state=random_state)
+    df_cat = pd.concat([df_F_sampled, df_R_sampled])
+    save_dir = os.path.dirname(csv_path)
+    save_path = os.path.join(save_dir, "train_data.csv")
+    df_cat.to_csv(save_path, index=False)
 
-    train_data_df = pd.concat([Reactive_train_inside_patch_df, FL_train_inside_patch_df, Reactive_train_outside_patch_df, FL_train_outside_patch_df])
-    test_data_df = pd.concat([Reactive_test_inside_patch_df, FL_test_inside_patch_df, Reactive_test_outside_patch_df, FL_test_outside_patch_df])
-
-    #train_data_df.drop(columns=["case", "patch_count"], inplace=True)
-    #test_data_df.drop(columns=["case", "patch_count"], inplace=True)
-    print("n_patch_train", n_train_patch_by_subtype)
-    print("n_patch_test", n_test_patch_by_subtype)
-    train_data_df.to_csv("csv/train_data_for448.csv", index=False)
-    test_data_df.to_csv("csv/test_data_for448.csv", index=False)
+def create_test_data(df):
+    save_dir = os.path.dirname(csv_path)
+    save_path = os.path.join(save_dir, "test_data.csv")
+    df.to_csv(save_path, index=False)
 
 
-create_dataset()
+def separate_train_test():
+    df = pd.read_csv(csv_path)
+    test_cases_R = ["JMR1364", "JMR2302", "JMR2205"]
+    test_cases_F = ["JMR0398", "JMR0025", "JMR0011"] #G1, G2, G3a
 
+    test_cases = test_cases_R + test_cases_F
+
+    is_test = df["case"].isin(test_cases)
+    test_df = df[is_test]
+    train_df = df[~is_test]
+
+    return train_df, test_df
+
+
+train_df, test_df = separate_train_test()
+create_train_data(train_df)
+create_test_data(test_df)

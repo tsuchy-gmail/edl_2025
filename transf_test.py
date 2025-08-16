@@ -8,12 +8,17 @@ def get_img_paths(csv_path):
     img_paths = df["img_path"].tolist()
     return img_paths
 
-paths = get_img_paths("csv/T_test_data.csv")
+csv_path = f"csv/size896_stride896/train_data.csv"
+paths = get_img_paths(csv_path)
 img = Image.open(paths[0])
-#resize = T.Resize((224, 224))
-crop = T.CenterCrop(14)
-#resized = resize(img)
 
-pyplot.imshow(crop(img))
-pyplot.savefig("figure/crop14.png")
+size = 224
+size_t = (size, size)
+c_crop = T.CenterCrop(size=size_t)
+resize = T.Resize(size_t)
+cropped = c_crop(img)
+resized = resize(cropped)
+
+pyplot.imshow(resized)
+pyplot.savefig(f"figure/896to{size}_dpi300.png", dpi=300)
 
