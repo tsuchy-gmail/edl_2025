@@ -62,11 +62,11 @@ class ImageDataset(Dataset):
 
         return img
 
-def preload_all_imgs(img_path_list, transform, ini_num_workers, batch_size, crop_size):
+def preload_all_imgs(img_path_list, transform, ini_num_workers, batch_size):
     img_ds = ImageDataset(img_path_list, transform)
     img_loader = DataLoader(img_ds, batch_size=batch_size, shuffle=False, num_workers=ini_num_workers)
     n_all_imgs = len(img_path_list)
-    all_imgs_tensor = torch.empty((n_all_imgs, 3, crop_size, crop_size), dtype=torch.uint8)
+    all_imgs_tensor = torch.empty((n_all_imgs, 3, 224, 224), dtype=torch.uint8)
 
     start = 0
     for i, img_batch in enumerate(tqdm(img_loader, desc="Loading imgs in batch")):
@@ -122,8 +122,8 @@ def get_transforms(crop_size):
     return transforms.Compose(
             [
                 RandomRotation90(),
-                transforms.Resize(crop_size_tuple),
-                #transforms.CenterCrop(size=crop_size_tuple),
+                transforms.CenterCrop(size=crop_size_tuple),
+                transforms.Resize((224, 224)),
                 #transforms.ToTensor(),
                 transforms.PILToTensor(),
             ]
@@ -573,13 +573,13 @@ def test(model, loader, records, save_ok, device, lamb, epoch, result_path, epoc
     return avg_dict["loss_in"], avg_dict["loss_out"], acc, acc_in, acc_out
 
 def get_loader(transform, ini_num_workers, num_workers, batch_size, crop_size):
-    train_img_path_list, train_subtype_list, train_region_list, train_case_list= get_list_data("csv/size896_stride896/train_data.csv")
-    train_img_tensor = preload_all_imgs(train_img_path_list, transform, ini_num_workers, batch_size, crop_size)
+    train_img_path_list, train_subtype_list, train_region_list, train_case_list= get_list_data("csv/train_data.csv")
+    train_img_tensor = preload_all_imgs(train_img_path_list, transform, ini_num_workers, batch_size)
     train_ds = CustomDataset(train_img_tensor, train_subtype_list, train_region_list, train_case_list)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers)
 
-    test_img_path_list, test_subtype_list, test_region_list, test_case_list = get_list_data("csv/size896_stride896/test_data.csv")
-    test_img_tensor = preload_all_imgs(test_img_path_list, transform, ini_num_workers, batch_size, crop_size)
+    test_img_path_list, test_subtype_list, test_region_list, test_case_list = get_list_data("csv/test_data.csv")
+    test_img_tensor = preload_all_imgs(test_img_path_list, transform, ini_num_workers, batch_size)
     test_ds = CustomDataset(test_img_tensor, test_subtype_list, test_region_list, test_case_list)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_workers)
 
@@ -764,6 +764,8 @@ def main():
     n_loop = int(sys.argv[4+n_ps]) if len(sys.argv) >= (5+n_ps) else 1
     dir_suffix = sys.argv[5+n_ps] if len(sys.argv) >= (6+n_ps) else ""
     crop_size = int(sys.argv[6+n_ps]) if len(sys.argv) >= (7+n_ps) else 224
+
+    crop_size = 224
 
     batch_size = 64 * ((448 // crop_size) ** 2)
 

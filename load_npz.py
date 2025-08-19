@@ -1,6 +1,6 @@
 import numpy as np
 
-CASE = "JMR2499"
-embeds_save_path = f"saved_embeds/all_area/{CASE}_embeds.npy"
+CASE = "JMR0020"
+embeds_save_path = f"{CASE}_embeds.npz"
 data = np.load(embeds_save_path)
-print(data)
+print(data["embeds"].shape)

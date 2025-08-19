@@ -13,7 +13,7 @@ import os
 start = time.time()
 
 vir = timm.create_model("hf-hub:paige-ai/Virchow", pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
-device = torch.device("cuda:3")
+device = torch.device("cuda:1")
 vir = vir.eval().to(device)
 for p in vir.parameters(): 
     p.requires_grad = False
@@ -21,19 +21,19 @@ for p in vir.parameters():
 @torch.no_grad()                                      # ← 明示推論
 def embed(x):                                         # x: (B,3,224,224)
     y = vir(x)                                        # (B,257,1280)
-    #feats = torch.cat([y[:,0], y[:,1:].mean(1)], -1)  # (B,2560)
-    feats = torch.cat([y[:,0]], -1) #only CLS token
+    feats = torch.cat([y[:,0], y[:,1:].mean(1)], -1)  # (B,2560)
+    #feats = torch.cat([y[:,0]], -1) #only CLS token
     #feats = y[:,1:].mean(1) #only 14patch token
     return feats                                      # on GPU
 
 # ---- 2. Dataset ----
 class Crop224DS(Dataset):
-    def __init__(self, img_paths):
+    def __init__(self, img_paths, org_size):
         self.img_paths = img_paths
         cfg = vir.pretrained_cfg
         self.tf = Compose([
+            CenterCrop(org_size),
             Resize((224, 224)),
-            CenterCrop(224),
             ToTensor(),
             Normalize(mean=cfg["mean"], std=cfg["std"])
         ])
@@ -59,13 +59,13 @@ def show_img9(img_batch):
     plt.savefig("result/resized9.png")
     exit(0)
 
-def extract_feats(tar_dir, filename, savename):
-    img_paths = get_list_data(f"csv/{tar_dir}/{filename}")
-    ds  = Crop224DS(img_paths)
+def extract_feats(org_size, tar_dir, filename, savename):
+    img_paths = get_list_data(f"csv/{tar_dir}{filename}")
+    ds  = Crop224DS(img_paths, org_size)
     ldr = DataLoader(ds, batch_size=256, num_workers=4, pin_memory=True, shuffle=False)
 
     N = len(ds)
-    feat_mat = np.empty((N, 1280), dtype="float32")
+    feat_mat = np.empty((N, 2560), dtype="float32")
     idx = 0
 
 
@@ -90,6 +90,8 @@ def extract_feats(tar_dir, filename, savename):
 
 patch_size = 896
 stride = 896
-tar_dir = f"size{patch_size}_stride{stride}"
-extract_feats(tar_dir, "train_data.csv", "only_cls_train.npy")
-extract_feats(tar_dir, "test_data.csv", "only_cls_test.npy")
+#tar_dir = f"size{patch_size}_stride{stride}"
+tar_dir = ""
+org_size = 448
+extract_feats(org_size, tar_dir, "train_data_inside.csv", "448Res224_in_train.npy")
+#extract_feats(org_size, tar_dir, "test_data.csv", "448Res224_test.npy")

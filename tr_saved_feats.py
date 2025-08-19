@@ -561,18 +561,19 @@ def test(head, loader, records, save_ok, device, lamb, epoch, result_path, epoch
         plot_loss(test_loss_df, "Test Loss", loss_png_path, 2)
         plot_acc(test_loss_df, "Accuracy", acc_png_path)
 
-        #torch.save(model.state_dict(), os.path.join(result_path, "model_last.pth"))
+        torch.save(head.state_dict(), os.path.join(result_path, "model_last.pth"))
 
     return avg_dict["loss_in"], avg_dict["loss_out"], acc, acc_in, acc_out
 
 def get_loader(ini_num_workers, num_workers, batch_size, crop_size):
+    feats_name = "512center224"
     _, train_subtype_list, train_region_list, train_case_list= get_list_data("csv/train_data.csv")
-    train_feats = np.load("vir_feats/resize224_train.npy", mmap_mode="r")
+    train_feats = np.load(f"saved_feats/{feats_name}_train.npy", mmap_mode="r")
     train_ds = FeatureDataset(train_feats, train_subtype_list, train_region_list, train_case_list)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers)
 
     _, test_subtype_list, test_region_list, test_case_list = get_list_data("csv/test_data.csv")
-    test_feats = np.load("vir_feats/resize224_test.npy", mmap_mode="r")
+    test_feats = np.load(f"saved_feats/{feats_name}_test.npy", mmap_mode="r")
     test_ds = FeatureDataset(test_feats, test_subtype_list, test_region_list, test_case_list)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_workers)
 
@@ -643,8 +644,8 @@ def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_siz
         kl_out_total = 0.0
 
         if "lamb0to1" in lamb_type:
-            #lamb = min(1, epoch / 10)
-            lamb = epoch / epochs
+            lamb = min(1, epoch / 10)
+            #lamb = epoch / epochs
             #if epoch >= 1000:
             #    lamb = 1
         elif "lamb1to0" in lamb_type:
@@ -707,8 +708,8 @@ def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_siz
 
         if avg_test_loss_in < min_test_loss_in:
             min_test_loss_in = avg_test_loss_in
-        """
             torch.save(head.state_dict(), os.path.join(result_dir_path, "min_test_loss_in.pth"))
+        """
         if avg_test_loss_out < min_test_loss_out:
             min_test_loss_out = avg_test_loss_out
             torch.save(model.state_dict(), os.path.join(result_dir_path, "min_test_loss_out.pth"))
@@ -719,8 +720,8 @@ def train(train_loader, test_loader, epochs, cuda, save_ok, dir_suffix, crop_siz
         """
         if acc_in > max_acc_in:
             max_acc_in = acc_in
+            torch.save(head.state_dict(), os.path.join(result_dir_path, "max_acc_in.pth"))
         """
-            torch.save(model.state_dict(), os.path.join(result_dir_path, "max_acc_in.pth"))
 
         if acc_out > max_acc_out:
             max_acc_out = acc_out
@@ -750,6 +751,7 @@ def main():
     n_loop = int(sys.argv[4+n_ps]) if len(sys.argv) >= (5+n_ps) else 1
     dir_suffix = sys.argv[5+n_ps] if len(sys.argv) >= (6+n_ps) else ""
     crop_size = int(sys.argv[6+n_ps]) if len(sys.argv) >= (7+n_ps) else 224
+    crop_size = 224
 
     #batch_size = 64 * ((448 // crop_size) ** 2)
     batch_size = 256

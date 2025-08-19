@@ -15,8 +15,8 @@ subtypes = ["Reactive", "FL/G1", "FL/G2", "FL/G3a", "FL/G3b"]
 outside_ratio = 1
 n_crop = 1000
 
-crop_size = 512
-stride = 512
+crop_size = 896
+stride = 896
 layer = 2
 resolutions = [1, 4, 16]
 
@@ -131,13 +131,6 @@ def get_outside_follicles_map_by_case(subtype, case_name):
     return outside_map
 
 
-def write_binary_map(binary_map, case_name):
-    save_dir = f"/hyades/tsuchimoto/outside_follicles"
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = f"{save_dir}/{case_name}"
-    cv2.imwrite(save_path, 255 * binary_map.astype(np.uint8))
-
-
 def get_coordinates_by_case(subtype, case_name):
     outside_bin_map = get_outside_follicles_map_by_case(subtype, case_name)
     down_map = torch.nn.functional.avg_pool2d(torch.from_numpy(outside_bin_map).unsqueeze(0).unsqueeze(0), kernel_size=crop_size_d, stride=stride_d, padding=0)
@@ -154,11 +147,14 @@ def crop_outside_random(subtype, case_name):
     xy_zipped = get_coordinates_by_case(subtype, case_name)
     xy_list = list(xy_zipped)
     random_xy_list = random.sample(xy_list, min(n_crop, len(xy_list)))
+    print(f"min(n_crop, len(xy_list)) = {min(n_crop, len(xy_list))}")
 
     svs_path = f"{svs_root_dir}/{case_name}.svs"
     svs_img = openslide.OpenSlide(svs_path)
 
-    save_root_dir = f"/Dataset/Kurume_Dataset/tsuchimoto/data/Follicle_Dataset/size512_stride256/{subtype}"
+    size = 896
+    stride = 896
+    save_root_dir = f"/Dataset/Kurume_Dataset/tsuchimoto/data/Follicle_Dataset/size{size}_stride{stride}/{subtype}"
     save_dir = f"{save_root_dir}/{case_name}/outside_follicles_n{n_crop}"
     if os.path.exists(save_dir):
         shutil.rmtree(save_dir)

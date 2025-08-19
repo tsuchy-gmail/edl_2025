@@ -27,10 +27,6 @@ def load_model(name: str, device: str):
         p.requires_grad = False
     return model
 
-def embed(x):
-    y = vir(x)
-    feats = torch.cat([y[:,0], y[:,1:].mean(1)], -1)
-    return feats
 
 def tissue_region_coords_16x(slide):
     level = 2
@@ -61,51 +57,15 @@ def tissue_region_coords_16x(slide):
 
     return coords
 
-def get_embeds():
-    print(CASE)
-    saved_coords_path = f"coords_{CASE}.npy"
-
-    slide = openslide.OpenSlide(WSI_PATH)
-    coords_16x = tissue_region_coords_16x(slide)
-    coords = np.array(coords_16x) * 16
-
-    n_total = len(coords_16x)
-    print("n_patch", n_total)
-
-    model = load_model(MODEL_NAME, DEVICE)
-    cfg = model.pretrained_cfg
-    tfm = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=cfg["mean"], std=cfg["std"])
-    ])
-
-    embeds = np.empty((n_total, 2560), dtype=np.float32)
-    with torch.no_grad():
-        for i in range(0, n_total, BATCH_SIZE):
-            print(f"{i}/{n_total}")
-            batch_coords = coords[i:i+BATCH_SIZE]
-            imgs = []
-            for x, y in batch_coords:
-                img = slide.read_region((x, y), 0, (PATCH_SIZE, PATCH_SIZE)).convert("RGB")
-                imgs.append(tfm(img))
-            x_tensor = torch.stack(imgs).to(DEVICE)
-            out = model(x_tensor).cpu()
-            feats = torch.cat([out[:,0], out[:,1:].mean(1)], -1).numpy()
-            embeds[i:i+len(batch_coords)] = feats
-
-    np.savez(f"{CASE}_embeds.npz", embeds=embeds, coords=coords)
-    print(f"✅ Saved: {CASE}_embeds.npz")
-
-    return embeds
-def pca(embeds):
+def draw_from_embeds(embeds):
     slide = openslide.OpenSlide(WSI_PATH)
     coords= tissue_region_coords_16x(slide)
 
-    pca = PCA(n_components=3, svd_solver="randomized")
-    rgb = pca.fit_transform(embeds)         # (N, 3)
-    rgb -= rgb.min(axis=0, keepdims=True)
-    rgb /= rgb.max(axis=0, keepdims=True) + 1e-7
-    rgb = (rgb * 255).astype(np.uint8)
+    #pca = PCA(n_components=3, svd_solver="randomized")
+    #rgb = pca.fit_transform(embeds)         # (N, 3)
+    #rgb -= rgb.min(axis=0, keepdims=True)
+    #rgb /= rgb.max(axis=0, keepdims=True) + 1e-7
+    #rgb = (rgb * 255).astype(np.uint8)
 
     w0, h0  = slide.level_dimensions[0]
     nx = w0 // PATCH_SIZE
