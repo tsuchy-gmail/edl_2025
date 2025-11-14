@@ -12,7 +12,13 @@ import matplotlib.pyplot as plt
 import os
 start = time.time()
 
+import timm, torch
+from timm.layers import SwiGLUPacked
+
+timm.create_model("hf-hub:paige-ai/Virchow2", pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
 vir = timm.create_model("hf-hub:paige-ai/Virchow2", pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
+print("created model")
+exit(0)
 device = torch.device("cuda:1")
 vir = vir.eval().to(device)
 for p in vir.parameters(): 
@@ -49,15 +55,15 @@ def get_list_data(csv_path):
 
     return img_path_list
 
-def show_img9(img_batch):
+def show_img9(img_batch, save_dir):
     fig, axes = plt.subplots(3, 3, figsize=(8, 8))
     for i, ax in enumerate(axes.flat):
         ax.imshow(F.to_pil_image(img_batch[i]))  # PILに変換して表示
         ax.axis('off')
 
     plt.tight_layout()
-    plt.savefig("result/resized9.png")
-    exit(0)
+    save_path = os.path.join(save_dir, "img9.png")
+    plt.savefig(save_path)
 
 def extract_feats(org_size, csv_tar_dir, filename, savename):
     img_paths = get_list_data(f"csv/{csv_tar_dir}{filename}")
@@ -68,29 +74,29 @@ def extract_feats(org_size, csv_tar_dir, filename, savename):
     feat_mat = np.empty((N, 2560), dtype="float32")
     idx = 0
 
+    save_dir = f"saved_feats/virchow2/size{org_size}_stride{org_size}"
+    save_path = os.path.join(save_dir, savename)
 
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    flag = True
     for img_batch in tqdm(ldr, total=len(ldr)):
         img_batch = img_batch.to(device, non_blocking=True)
-        #show_img9(img_batch)
+        if flag:
+            show_img9(img_batch, save_dir)
+            flag = False
         feats = embed(img_batch).cpu().numpy()
         print(feats.shape)
         feat_mat[idx:idx+len(feats)] = feats
         idx += len(feats)
-
-    save_root_dir = "saved_feats/virchow2/size{org_size}_stride{org_size}"
-    save_dir = os.path.join(save_root_dir, csv_tar_dir)
-    save_path = os.path.join(save_dir, savename)
     
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
     np.save(save_path, feat_mat)
     print("saved:", feat_mat.shape)
     end = time.time()
     print("time", f"{end-start:.4f}")
 
-patch_size = 224
-stride = 224
-tar_dir = f""
-org_size = 224
-extract_feats(org_size, tar_dir, "train_data.csv", "train_data_inout.npy")
-extract_feats(org_size, tar_dir, "test_data.csv", "test_data_inout.npy")
+csv_tar_dir = f"size896_stride896/"
+org_size = 896
+extract_feats(org_size, csv_tar_dir, "test_data.csv", "test_data_inout.npy")
+extract_feats(org_size, csv_tar_dir, "train_data.csv", "train_data_inout.npy")
